@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit — See your codebase. Talk to it.</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg-deep: #0A0E17;
+    --bg-surface: #0F1420;
+    --bg-elevated: #151B2B;
+    --neon-white: #E8EEFF;
+    --pure-white: #FFFFFF;
+    --blue-primary: #3B82F6;
+    --blue-glow: #60A5FA;
+    --blue-bright: #93C5FD;
+    --cyan-accent: #22D3EE;
+    --muted: #4B5578;
+    --muted-light: #6B7BA0;
+    --border: rgba(59, 130, 246, 0.15);
+    --border-hover: rgba(59, 130, 246, 0.4);
+    --glow-sm: 0 0 12px rgba(59, 130, 246, 0.15);
+    --glow-md: 0 0 24px rgba(59, 130, 246, 0.2);
+    --glow-lg: 0 0 48px rgba(59, 130, 246, 0.15);
+    --font-display: 'Outfit', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  body {
+    background: var(--bg-deep);
+    color: var(--neon-white);
+    font-family: var(--font-display);
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    top: -30%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 800px;
+    height: 800px;
+    background: radial-gradient(circle, rgba(59, 130, 246, 0.06) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    bottom: -20%;
+    right: -10%;
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(34, 211, 238, 0.04) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .grid-bg {
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(59, 130, 246, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px);
+    background-size: 64px 64px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 0 24px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+
+  nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    padding: 20px 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: linear-gradient(to bottom, var(--bg-deep) 60%, transparent);
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+  }
+
+  .logo-icon { width: 32px; height: 32px; }
+
+  .logo-icon .orbit-ring {
+    fill: none;
+    stroke: var(--blue-primary);
+    stroke-width: 1.5;
+    filter: drop-shadow(0 0 4px rgba(59, 130, 246, 0.4));
+  }
+
+  .logo-icon .orbit-dot {
+    fill: var(--pure-white);
+    filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.6));
+  }
+
+  .logo-text {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 18px;
+    color: var(--pure-white);
+    letter-spacing: 0.5px;
+  }
+
+  nav a.github-link {
+    color: var(--muted-light);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 400;
+    transition: color 0.2s;
+  }
+
+  nav a.github-link:hover { color: var(--neon-white); }
+
+  .hero {
+    text-align: center;
+    margin-bottom: 48px;
+    animation: fadeUp 0.8s ease-out;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 100px;
+    border: 1px solid var(--border);
+    background: rgba(59, 130, 246, 0.05);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--blue-bright);
+    letter-spacing: 0.5px;
+    margin-bottom: 28px;
+  }
+
+  .badge::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--blue-primary);
+    box-shadow: 0 0 8px var(--blue-primary);
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  h1 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 52px;
+    line-height: 1.1;
+    color: var(--pure-white);
+    margin-bottom: 16px;
+    letter-spacing: -1px;
+  }
+
+  h1 .highlight {
+    background: linear-gradient(135deg, var(--blue-primary), var(--cyan-accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .subtitle {
+    font-size: 17px;
+    font-weight: 300;
+    color: var(--muted-light);
+    line-height: 1.6;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+
+  .input-section {
+    width: 100%;
+    animation: fadeUp 0.8s ease-out 0.15s both;
+  }
+
+  .url-input-wrapper {
+    position: relative;
+    width: 100%;
+    margin-bottom: 20px;
+  }
+
+  .url-input {
+    width: 100%;
+    padding: 16px 140px 16px 48px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    color: var(--pure-white);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 400;
+    outline: none;
+    transition: border-color 0.25s, box-shadow 0.25s;
+  }
+
+  .url-input::placeholder { color: var(--muted); }
+
+  .url-input:focus {
+    border-color: var(--blue-primary);
+    box-shadow: var(--glow-sm), inset 0 0 0 1px rgba(59, 130, 246, 0.1);
+  }
+
+  .url-icon {
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    pointer-events: none;
+  }
+
+  .url-btn {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 10px 20px;
+    background: var(--blue-primary);
+    color: var(--pure-white);
+    border: none;
+    border-radius: 10px;
+    font-family: var(--font-display);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s, box-shadow 0.2s;
+    letter-spacing: 0.3px;
+  }
+
+  .url-btn:hover {
+    background: #4B8DF8;
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+  }
+
+  .url-btn:active { transform: translateY(-50%) scale(0.97); }
+
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 8px 0;
+    color: var(--muted);
+    font-size: 12px;
+    font-family: var(--font-mono);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+
+  .divider::before,
+  .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+  }
+
+  .dropzone {
+    width: 100%;
+    margin-top: 20px;
+    padding: 40px 24px;
+    border: 1.5px dashed var(--border);
+    border-radius: 14px;
+    background: rgba(15, 20, 32, 0.5);
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.25s, background 0.25s, box-shadow 0.25s;
+  }
+
+  .dropzone:hover {
+    border-color: var(--border-hover);
+    background: rgba(59, 130, 246, 0.03);
+  }
+
+  .dropzone.dragover {
+    border-color: var(--blue-primary);
+    background: rgba(59, 130, 246, 0.06);
+    box-shadow: var(--glow-md);
+  }
+
+  .dropzone-icon {
+    margin-bottom: 12px;
+    color: var(--muted-light);
+    transition: color 0.2s;
+  }
+
+  .dropzone:hover .dropzone-icon { color: var(--blue-bright); }
+
+  .dropzone-text {
+    font-size: 15px;
+    font-weight: 400;
+    color: var(--muted-light);
+    margin-bottom: 6px;
+  }
+
+  .dropzone-text strong {
+    color: var(--blue-bright);
+    font-weight: 500;
+  }
+
+  .dropzone-hint {
+    font-size: 12px;
+    font-family: var(--font-mono);
+    color: var(--muted);
+  }
+
+  .dropzone input[type="file"] { display: none; }
+
+  .file-info {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    margin-top: 16px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    animation: fadeUp 0.3s ease-out;
+  }
+
+  .file-info.visible { display: flex; }
+
+  .file-info-icon {
+    color: var(--blue-primary);
+    flex-shrink: 0;
+  }
+
+  .file-info-details {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .file-info-name {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--neon-white);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .file-info-size {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .file-info-action {
+    padding: 8px 18px;
+    background: var(--blue-primary);
+    color: var(--pure-white);
+    border: none;
+    border-radius: 8px;
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s, box-shadow 0.2s;
+    flex-shrink: 0;
+  }
+
+  .file-info-action:hover {
+    background: #4B8DF8;
+    box-shadow: 0 0 16px rgba(59, 130, 246, 0.3);
+  }
+
+  .file-info-remove {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 4px;
+    transition: color 0.2s;
+    flex-shrink: 0;
+  }
+
+  .file-info-remove:hover { color: var(--neon-white); }
+
+  .footer-hints {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    margin-top: 40px;
+    animation: fadeUp 0.8s ease-out 0.3s both;
+  }
+
+  .hint {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--muted);
+    font-weight: 300;
+  }
+
+  .hint svg { color: var(--muted); flex-shrink: 0; }
+
+  .floating-node {
+    position: fixed;
+    border-radius: 50%;
+    background: var(--blue-primary);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 0;
+    animation: float-in 1s ease-out forwards;
+  }
+
+  .floating-node::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    background: var(--blue-primary);
+    opacity: 0.15;
+    filter: blur(4px);
+  }
+
+  @keyframes float-in { to { opacity: 0.4; } }
+
+  .floating-edge {
+    position: fixed;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.12), transparent);
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0;
+    animation: float-in 1.5s ease-out forwards;
+  }
+
+  @media (max-width: 600px) {
+    h1 { font-size: 36px; }
+    .subtitle { font-size: 15px; }
+    .url-input { padding: 14px 120px 14px 44px; font-size: 13px; }
+    .url-btn { padding: 8px 16px; font-size: 13px; }
+    .footer-hints { flex-direction: column; align-items: center; gap: 12px; }
+    nav { padding: 16px 20px; }
+  }
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+
+<nav>
+  <a href="#" class="logo">
+    <svg class="logo-icon" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      <ellipse class="orbit-ring" cx="16" cy="16" rx="14" ry="6" transform="rotate(-30 16 16)" />
+      <ellipse class="orbit-ring" cx="16" cy="16" rx="14" ry="6" transform="rotate(30 16 16)" />
+      <circle class="orbit-dot" cx="16" cy="16" r="3" />
+    </svg>
+    <span class="logo-text">Orbit</span>
+  </a>
+  <a href="#" class="github-link">GitHub ↗</a>
+</nav>
+
+<div class="container">
+  <div class="hero">
+    <div class="badge">v1.0 — React & Next.js</div>
+    <h1>See your codebase.<br><span class="highlight">Talk to it.</span></h1>
+    <p class="subtitle">Paste a GitHub repo or drop a zip file. Orbit maps your code into an interactive graph and lets you explore it with AI.</p>
+  </div>
+
+  <div class="input-section">
+    <div class="url-input-wrapper">
+      <svg class="url-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>
+      </svg>
+      <input type="text" class="url-input" id="repoUrl" placeholder="https://github.com/user/repo" spellcheck="false" autocomplete="off" />
+      <button class="url-btn" id="visualiseBtn" onclick="handleUrl()">Visualise</button>
+    </div>
+
+    <div class="divider">or</div>
+
+    <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+      <svg class="dropzone-icon" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <polyline points="17 8 12 3 7 8" />
+        <line x1="12" y1="3" x2="12" y2="15" />
+      </svg>
+      <p class="dropzone-text">Drop a <strong>.zip</strong> file here, or click to browse</p>
+      <p class="dropzone-hint">.zip containing a React or Next.js project</p>
+      <input type="file" id="fileInput" accept=".zip" />
+    </div>
+
+    <div class="file-info" id="fileInfo">
+      <svg class="file-info-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/>
+      </svg>
+      <div class="file-info-details">
+        <div class="file-info-name" id="fileName"></div>
+        <div class="file-info-size" id="fileSize"></div>
+      </div>
+      <button class="file-info-action" onclick="handleZip()">Visualise</button>
+      <button class="file-info-remove" onclick="clearFile()" title="Remove file">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="footer-hints">
+    <div class="hint">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+      Public repos only for v1
+    </div>
+    <div class="hint">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      Your code stays in the browser
+    </div>
+  </div>
+</div>
+
+<script>
+  const nodePositions = [
+    { x: '8%', y: '20%', delay: '0.2s', size: 6 },
+    { x: '92%', y: '15%', delay: '0.5s', size: 8 },
+    { x: '85%', y: '75%', delay: '0.8s', size: 5 },
+    { x: '12%', y: '80%', delay: '0.4s', size: 7 },
+    { x: '5%', y: '50%', delay: '1s', size: 4 },
+    { x: '95%', y: '45%', delay: '0.7s', size: 6 },
+    { x: '20%', y: '10%', delay: '1.2s', size: 5 },
+    { x: '78%', y: '88%', delay: '0.9s', size: 7 },
+  ];
+
+  nodePositions.forEach(n => {
+    const el = document.createElement('div');
+    el.className = 'floating-node';
+    el.style.left = n.x;
+    el.style.top = n.y;
+    el.style.width = n.size + 'px';
+    el.style.height = n.size + 'px';
+    el.style.animationDelay = n.delay;
+    document.body.appendChild(el);
+  });
+
+  const edges = [
+    { x: '6%', y: '22%', w: 120, r: 25, delay: '0.6s' },
+    { x: '88%', y: '18%', w: 80, r: -15, delay: '0.9s' },
+    { x: '80%', y: '78%', w: 100, r: 40, delay: '1.1s' },
+    { x: '10%', y: '78%', w: 90, r: -20, delay: '0.7s' },
+  ];
+
+  edges.forEach(e => {
+    const el = document.createElement('div');
+    el.className = 'floating-edge';
+    el.style.left = e.x;
+    el.style.top = e.y;
+    el.style.width = e.w + 'px';
+    el.style.transform = `rotate(${e.r}deg)`;
+    el.style.animationDelay = e.delay;
+    document.body.appendChild(el);
+  });
+
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  let selectedFile = null;
+
+  ['dragenter', 'dragover'].forEach(evt => {
+    dropzone.addEventListener(evt, e => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+  });
+
+  ['dragleave', 'drop'].forEach(evt => {
+    dropzone.addEventListener(evt, e => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+    });
+  });
+
+  dropzone.addEventListener('drop', e => {
+    const file = e.dataTransfer.files[0];
+    if (file && file.name.endsWith('.zip')) selectFile(file);
+  });
+
+  fileInput.addEventListener('change', e => {
+    if (e.target.files[0]) selectFile(e.target.files[0]);
+  });
+
+  function selectFile(file) {
+    selectedFile = file;
+    document.getElementById('fileName').textContent = file.name;
+    document.getElementById('fileSize').textContent = formatSize(file.size);
+    document.getElementById('fileInfo').classList.add('visible');
+  }
+
+  function clearFile() {
+    selectedFile = null;
+    fileInput.value = '';
+    document.getElementById('fileInfo').classList.remove('visible');
+  }
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
+  function handleUrl() {
+    const url = document.getElementById('repoUrl').value.trim();
+    if (!url) { document.getElementById('repoUrl').focus(); return; }
+    console.log('Visualise repo:', url);
+  }
+
+  function handleZip() {
+    if (!selectedFile) return;
+    console.log('Visualise zip:', selectedFile.name);
+  }
+
+  document.getElementById('repoUrl').addEventListener('keydown', e => {
+    if (e.key === 'Enter') handleUrl();
+  });
+</script>
+</body>
+</html>
