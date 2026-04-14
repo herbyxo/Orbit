@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   ReactFlow,
   Background,
@@ -29,10 +29,8 @@ function layoutNodes(graphNodes, graphEdges) {
     .force('collide', forceCollide(80))
     .stop()
 
-  // Run simulation ticks
   for (let i = 0; i < 200; i++) simulation.tick()
 
-  // Map computed positions back to nodes
   const posMap = {}
   simNodes.forEach(n => {
     posMap[n.id] = { x: n.x, y: n.y }
@@ -44,14 +42,14 @@ function layoutNodes(graphNodes, graphEdges) {
   }))
 }
 
-function GraphInner({ graphData, onNodeClick }) {
+function GraphInner({ graphData, onNodeClick, highlightedPaths }) {
   const laidOutNodes = useMemo(
     () => layoutNodes(graphData.nodes, graphData.edges),
     [graphData]
   )
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(laidOutNodes)
-  const [edges, setEdges, onEdgesChange] = useEdgesState(
+  const [nodes, , onNodesChange] = useNodesState(laidOutNodes)
+  const [edges, , onEdgesChange] = useEdgesState(
     graphData.edges.map(e => ({
       ...e,
       style: { stroke: '#CDCDD1', strokeWidth: 1 },
@@ -59,17 +57,75 @@ function GraphInner({ graphData, onNodeClick }) {
     }))
   )
 
+  const [hoveredId, setHoveredId] = useState(null)
+
+  // Pre-compute adjacency for hover-dim behaviour.
+  const neighbours = useMemo(() => {
+    const map = new Map()
+    for (const n of nodes) map.set(n.id, new Set([n.id]))
+    for (const e of edges) {
+      map.get(e.source)?.add(e.target)
+      map.get(e.target)?.add(e.source)
+    }
+    return map
+  }, [nodes, edges])
+
+  // Decorate nodes with hover + highlight flags each render.
+  // Keeps `nodes` state clean for React Flow's internal tracking (drag, etc.)
+  const displayNodes = useMemo(() => {
+    const highlightSet = new Set(highlightedPaths ?? [])
+    const focused = hoveredId ? neighbours.get(hoveredId) : null
+
+    return nodes.map(n => ({
+      ...n,
+      data: {
+        ...n.data,
+        isHighlighted: highlightSet.has(n.data?.fullPath ?? n.id),
+        isDimmed: focused ? !focused.has(n.id) : false,
+        isFocused: n.id === hoveredId,
+      },
+    }))
+  }, [nodes, hoveredId, neighbours, highlightedPaths])
+
+  // Decorate edges - fade unrelated ones on hover, glow hovered ones.
+  const displayEdges = useMemo(() => {
+    if (!hoveredId) return edges
+    return edges.map(e => {
+      const connected = e.source === hoveredId || e.target === hoveredId
+      return {
+        ...e,
+        animated: connected,
+        style: {
+          ...(e.style ?? {}),
+          opacity: connected ? 1 : 0.15,
+          stroke: connected ? '#10A37F' : '#CDCDD1',
+          strokeWidth: connected ? 2 : 1,
+        },
+      }
+    })
+  }, [edges, hoveredId])
+
   const handleNodeClick = useCallback((event, node) => {
     if (onNodeClick) onNodeClick(node)
   }, [onNodeClick])
 
+  const handleNodeMouseEnter = useCallback((_e, node) => {
+    setHoveredId(node.id)
+  }, [])
+
+  const handleNodeMouseLeave = useCallback(() => {
+    setHoveredId(null)
+  }, [])
+
   return (
     <ReactFlow
-      nodes={nodes}
-      edges={edges}
+      nodes={displayNodes}
+      edges={displayEdges}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       onNodeClick={handleNodeClick}
+      onNodeMouseEnter={handleNodeMouseEnter}
+      onNodeMouseLeave={handleNodeMouseLeave}
       nodeTypes={nodeTypes}
       fitView
       fitViewOptions={{ padding: 0.2 }}
@@ -86,7 +142,7 @@ function GraphInner({ graphData, onNodeClick }) {
   )
 }
 
-export default function Graph({ graphData, onNodeClick }) {
+export default function Graph({ graphData, onNodeClick, highlightedPaths }) {
   if (!graphData || !graphData.nodes.length) {
     return (
       <div className="flex items-center justify-center h-full text-[var(--text-tertiary)] text-sm">
@@ -97,7 +153,11 @@ export default function Graph({ graphData, onNodeClick }) {
 
   return (
     <ReactFlowProvider>
-      <GraphInner graphData={graphData} onNodeClick={onNodeClick} />
+      <GraphInner
+        graphData={graphData}
+        onNodeClick={onNodeClick}
+        highlightedPaths={highlightedPaths}
+      />
     </ReactFlowProvider>
   )
 }

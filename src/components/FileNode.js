@@ -3,17 +3,28 @@
 import { Handle, Position } from '@xyflow/react'
 
 export default function FileNode({ data, selected }) {
+  const { isHighlighted, isDimmed, isFocused } = data
+
+  // Priority: highlighted (AI) > focused (hover) > selected (click) > default
+  const borderClass = isHighlighted
+    ? 'border-[var(--green-primary)] shadow-[0_0_0_3px_rgba(16,163,127,0.35)]'
+    : isFocused
+    ? 'border-[var(--green-primary)] shadow-[0_0_0_2px_rgba(16,163,127,0.2)]'
+    : selected
+    ? 'border-[var(--green-primary)] shadow-[0_0_0_2px_rgba(16,163,127,0.15)]'
+    : 'border-[var(--border)] hover:border-[var(--border-hover)]'
+
   return (
     <div
       className={`
         px-3 py-2 rounded-lg border text-left min-w-[120px] max-w-[200px]
-        transition-all cursor-pointer
-        ${selected
-          ? 'border-[var(--green-primary)] shadow-[0_0_0_2px_rgba(16,163,127,0.15)]'
-          : 'border-[var(--border)] hover:border-[var(--border-hover)]'
-        }
+        transition-all duration-200 cursor-pointer
+        ${borderClass}
       `}
-      style={{ background: 'white' }}
+      style={{
+        background: 'white',
+        opacity: isDimmed ? 0.2 : 1,
+      }}
     >
       <Handle type="target" position={Position.Top} className="!bg-[var(--border)] !w-2 !h-2 !border-0" />
 
