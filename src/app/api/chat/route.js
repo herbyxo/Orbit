@@ -1,9 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { callLLM, humanizeLLMError } from '@/lib/llmProviders'
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-
-const MODEL = 'claude-sonnet-4-20250514'
-const MAX_TOKENS = 1000
+// Orbit is BYO-key: the user's own API key arrives in the request body,
+// gets forwarded to the provider SDK, and is never logged or persisted.
+// This route is stateless.
 
 const SMALL_REPO_THRESHOLD = 100
 const MAX_CONTENT_CHARS_PER_FILE = 4000
@@ -12,14 +11,8 @@ export const maxDuration = 30
 
 export async function POST(req) {
   try {
-    if (!process.env.ANTHROPIC_API_KEY) {
-      return Response.json(
-        { error: 'ANTHROPIC_API_KEY not configured' },
-        { status: 500 }
-      )
-    }
-
-    const { messages, graphContext } = await req.json()
+    const body = await req.json()
+    const { messages, graphContext, provider, model, apiKey } = body
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return Response.json(
@@ -28,25 +21,29 @@ export async function POST(req) {
       )
     }
 
+    if (!provider || !model || !apiKey) {
+      return Response.json(
+        { error: 'provider, model, and apiKey are required' },
+        { status: 400 }
+      )
+    }
+
     const system = buildSystemPrompt(graphContext)
 
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
+    const { text, usage } = await callLLM({
+      provider,
+      model,
+      apiKey,
       system,
-      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      messages,
     })
 
-    const text = response.content
-      .filter((block) => block.type === 'text')
-      .map((block) => block.text)
-      .join('')
-
-    return Response.json({ text, usage: response.usage })
+    return Response.json({ text, usage })
   } catch (err) {
-    console.error('[api/chat] error:', err)
+    // Log the provider + model but never the key.
+    console.error('[api/chat] error:', humanizeLLMError(err))
     return Response.json(
-      { error: err?.message ?? 'internal error' },
+      { error: humanizeLLMError(err) },
       { status: 500 }
     )
   }
@@ -84,7 +81,7 @@ Guidelines:
 - When you mention a specific file that's relevant, emit it in this exact format so the UI can highlight the corresponding node in the graph:
   [[highlight:exact/file/path.js]]
 - Use the exact path from the structure. You can emit multiple highlights per response.
-- If the codebase doesn't contain what the user is asking about, say so — don't invent files.
+- If the codebase doesn't contain what the user is asking about, say so - don't invent files.
 - Keep answers tight. The developer wants insight, not an essay.
 - When tracing data flow or dependencies, walk through it step by step and highlight each file in the chain.`
 }
