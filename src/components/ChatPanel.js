@@ -6,14 +6,25 @@ import LLMSettings from './LLMSettings'
 
 const STORAGE_KEY = 'orbit-llm-config'
 
+// The orientation prompt that fires once when a new graph loads with config set.
+// Kept deliberately short to keep tokens cheap and response fast.
+const ORIENTATION_PROMPT = `Give me a brief orientation to this codebase. In under 120 words:
+- What does this app do at a high level?
+- What's the main entry point?
+- Which 2-4 files are most important to understand first?
+- Any notable architecture pattern or framework conventions you can see?
+
+Keep it tight. Highlight the key files with [[highlight:path]] tokens so the user can see them glow in the graph.`
+
 /**
- * ChatPanel - AI chat with BYO-key support.
+ * ChatPanel - AI chat with BYO-key support and auto-summary on load.
  *
  * Flow:
  *   1. Read stored config from localStorage on mount.
  *   2. If no config, show inline LLMSettings form instead of chat.
- *   3. Once configured, show chat normally. Gear icon opens LLMSettings in edit mode.
- *   4. Every chat request carries { provider, model, apiKey } from state - server never stores.
+ *   3. Once configured + graphContext present, auto-fire ONE summary call.
+ *   4. Regular chat below the summary card.
+ *   5. Gear icon to edit config.
  */
 export default function ChatPanel({ graphContext, onHighlight }) {
   const [config, setConfig] = useState(null)
@@ -23,9 +34,9 @@ export default function ChatPanel({ graphContext, onHighlight }) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [summary, setSummary] = useState(null) // { text, highlights, loading, error }
   const scrollRef = useRef(null)
 
-  // Load saved config on mount (client only).
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
@@ -35,11 +46,45 @@ export default function ChatPanel({ graphContext, onHighlight }) {
           setConfig(parsed)
         }
       }
-    } catch {
-      // ignore - treat as no config
-    }
+    } catch {}
     setConfigLoaded(true)
   }, [])
+
+  // Auto-summary: fires once when (config + graphContext) both present.
+  // Re-fires if either changes.
+  useEffect(() => {
+    if (!config || !graphContext) return
+    let cancelled = false
+    setSummary({ loading: true })
+
+    ;(async () => {
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: ORIENTATION_PROMPT }],
+            graphContext,
+            provider: config.provider,
+            model: config.model,
+            apiKey: config.apiKey,
+          }),
+        })
+        const data = await res.json()
+        if (cancelled) return
+        if (!res.ok) throw new Error(data?.error ?? `request failed (${res.status})`)
+        const { display, highlights } = parseHighlights(data.text ?? '')
+        setSummary({ text: display, highlights, loading: false })
+        if (highlights.length && typeof onHighlight === 'function') {
+          onHighlight(highlights)
+        }
+      } catch (err) {
+        if (!cancelled) setSummary({ error: err.message ?? 'summary failed', loading: false })
+      }
+    })()
+
+    return () => { cancelled = true }
+  }, [config, graphContext, onHighlight])
 
   useEffect(() => {
     const el = scrollRef.current
@@ -52,18 +97,15 @@ export default function ChatPanel({ graphContext, onHighlight }) {
     setEditingConfig(false)
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-    } catch {
-      // localStorage full / disabled - still works in-memory for this session
-    }
+    } catch {}
   }
 
   function clearConfig() {
     setConfig(null)
     setEditingConfig(false)
     setMessages([])
-    try {
-      localStorage.removeItem(STORAGE_KEY)
-    } catch {}
+    setSummary(null)
+    try { localStorage.removeItem(STORAGE_KEY) } catch {}
   }
 
   async function send(e) {
@@ -94,12 +136,7 @@ export default function ChatPanel({ graphContext, onHighlight }) {
       if (!res.ok) throw new Error(data?.error ?? `request failed (${res.status})`)
 
       const { display, highlights } = parseHighlights(data.text ?? '')
-
-      setMessages((m) => [
-        ...m,
-        { role: 'assistant', content: display, highlights },
-      ])
-
+      setMessages((m) => [...m, { role: 'assistant', content: display, highlights }])
       if (highlights.length && typeof onHighlight === 'function') {
         onHighlight(highlights)
       }
@@ -169,17 +206,25 @@ export default function ChatPanel({ graphContext, onHighlight }) {
           </div>
         )}
 
-        {configLoaded && config && !editingConfig && messages.length === 0 && !loading && <EmptyState />}
+        {configLoaded && config && !editingConfig && (
+          <>
+            {summary && <SummaryCard summary={summary} onHighlight={onHighlight} />}
 
-        {configLoaded && config && !editingConfig && messages.map((m, i) => (
-          <Message
-            key={i}
-            role={m.role}
-            content={m.content}
-            highlights={m.highlights}
-            onHighlight={onHighlight}
-          />
-        ))}
+            {messages.length === 0 && !summary?.loading && !loading && (
+              <EmptyState hasSummary={!!summary?.text} />
+            )}
+
+            {messages.map((m, i) => (
+              <Message
+                key={i}
+                role={m.role}
+                content={m.content}
+                highlights={m.highlights}
+                onHighlight={onHighlight}
+              />
+            ))}
+          </>
+        )}
 
         {loading && (
           <div className="flex items-center gap-2 text-[13px] text-[var(--text-tertiary)]">
@@ -201,7 +246,7 @@ export default function ChatPanel({ graphContext, onHighlight }) {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={config ? 'Ask about your codebase...' : 'Connect a provider above to start.'}
+            placeholder={config ? 'Ask a follow-up...' : 'Connect a provider above to start.'}
             disabled={loading || !config || editingConfig}
             className="flex-1 px-3.5 py-2.5 rounded-lg border border-[var(--border)] text-[13px] text-[var(--text-primary)] placeholder-[var(--text-tertiary)] outline-none transition-all focus:border-[var(--border-focus)] focus:shadow-[0_0_0_3px_rgba(16,163,127,0.1)] disabled:opacity-50"
           />
@@ -218,16 +263,74 @@ export default function ChatPanel({ graphContext, onHighlight }) {
   )
 }
 
-function EmptyState() {
-  const examples = [
-    'Where is the graph layout computed?',
-    'What does FileNode.js render?',
-    'Trace the data flow from parseZip to the graph view.',
-    'What will break if I delete buildGraph.js?',
-  ]
+function SummaryCard({ summary, onHighlight }) {
+  return (
+    <div className="rounded-xl border border-[var(--green-border)] bg-[var(--green-light)] p-3.5">
+      <div className="flex items-center gap-2 mb-2">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--green-primary)]">
+          <path d="M12 2l2.4 7.4H22l-6.2 4.5L18.2 21 12 16.5 5.8 21l2.4-7.1L2 9.4h7.6z" />
+        </svg>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--green-primary)]">
+          About this codebase
+        </span>
+      </div>
+
+      {summary.loading && (
+        <div className="flex items-center gap-2 text-[13px] text-[var(--text-tertiary)] py-1">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--green-primary)] animate-pulse" />
+          Analysing your codebase...
+        </div>
+      )}
+
+      {summary.error && (
+        <div className="text-[13px] text-red-600">
+          Couldn&apos;t generate summary: {summary.error}
+        </div>
+      )}
+
+      {summary.text && (
+        <>
+          <p className="text-[13px] text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap">
+            {summary.text}
+          </p>
+          {summary.highlights && summary.highlights.length > 0 && (
+            <div className="mt-2.5 pt-2.5 border-t border-[var(--green-border)] flex flex-wrap gap-1.5">
+              {summary.highlights.map((path) => (
+                <button
+                  key={path}
+                  onClick={() => onHighlight?.([path])}
+                  className="inline-flex items-center px-2 py-0.5 rounded-md bg-white border border-[var(--green-border)] text-[var(--green-primary)] text-[11px] font-mono hover:bg-[rgba(16,163,127,0.15)] transition-colors"
+                >
+                  {path}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+function EmptyState({ hasSummary }) {
+  const examples = hasSummary
+    ? [
+        'What will break if I delete the main entry point?',
+        'Where is state managed?',
+        'Are there any suspicious coupling hotspots?',
+        'How would I add a new page?',
+      ]
+    : [
+        'Where is the graph layout computed?',
+        'What does FileNode.js render?',
+        'Trace the data flow from parseZip to the graph view.',
+        'What will break if I delete buildGraph.js?',
+      ]
   return (
     <div className="text-[13px] space-y-2.5">
-      <p className="text-[var(--text-secondary)]">Try asking:</p>
+      <p className="text-[var(--text-secondary)]">
+        {hasSummary ? 'Ask a follow-up:' : 'Try asking:'}
+      </p>
       <ul className="space-y-1.5">
         {examples.map((ex) => (
           <li key={ex} className="text-[var(--text-tertiary)]">
