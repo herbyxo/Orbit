@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ReactFlow,
   Background,
   Controls,
   useNodesState,
   useEdgesState,
+  useReactFlow,
   ReactFlowProvider,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -42,7 +43,18 @@ function layoutNodes(graphNodes, graphEdges) {
   }))
 }
 
-function GraphInner({ graphData, onNodeClick, highlightedPaths }) {
+/**
+ * @param {Object} props
+ * @param {Object} props.graphData
+ * @param {Function} props.onNodeClick
+ * @param {string[]} props.highlightedPaths
+ * @param {{ centerId: string, ancestors: Set<string>, descendants: Set<string> } | null} props.impact
+ * @param {Set<string>} props.hiddenTypes - file types to hide
+ * @param {{ id: string, ts: number } | null} props.focusNodeId - pan to this node
+ */
+function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTypes, focusNodeId }) {
+  const reactFlow = useReactFlow()
+
   const laidOutNodes = useMemo(
     () => layoutNodes(graphData.nodes, graphData.edges),
     [graphData]
@@ -59,6 +71,14 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths }) {
 
   const [hoveredId, setHoveredId] = useState(null)
 
+  // Pan to focusNodeId when it changes.
+  useEffect(() => {
+    if (!focusNodeId?.id) return
+    const node = nodes.find(n => n.id === focusNodeId.id)
+    if (!node) return
+    reactFlow.setCenter(node.position.x, node.position.y, { zoom: 1.4, duration: 600 })
+  }, [focusNodeId]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Pre-compute adjacency for hover-dim behaviour.
   const neighbours = useMemo(() => {
     const map = new Map()
@@ -70,30 +90,69 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths }) {
     return map
   }, [nodes, edges])
 
-  // Decorate nodes with hover + highlight flags each render.
-  // Keeps `nodes` state clean for React Flow's internal tracking (drag, etc.)
   const displayNodes = useMemo(() => {
     const highlightSet = new Set(highlightedPaths ?? [])
     const focused = hoveredId ? neighbours.get(hoveredId) : null
+    const hiddenSet = hiddenTypes ?? new Set()
 
-    return nodes.map(n => ({
-      ...n,
-      data: {
-        ...n.data,
-        isHighlighted: highlightSet.has(n.data?.fullPath ?? n.id),
-        isDimmed: focused ? !focused.has(n.id) : false,
-        isFocused: n.id === hoveredId,
-      },
-    }))
-  }, [nodes, hoveredId, neighbours, highlightedPaths])
+    return nodes.map(n => {
+      const hidden = hiddenSet.has(n.data?.fileType)
+      return {
+        ...n,
+        hidden,
+        data: {
+          ...n.data,
+          isHighlighted: highlightSet.has(n.data?.fullPath ?? n.id),
+          isDimmed: focused ? !focused.has(n.id) : false,
+          isFocused: n.id === hoveredId,
+          isImpactCenter: impact?.centerId === n.id,
+          isAncestor: impact ? impact.ancestors.has(n.id) : false,
+          isDescendant: impact ? impact.descendants.has(n.id) : false,
+        },
+      }
+    })
+  }, [nodes, hoveredId, neighbours, highlightedPaths, impact, hiddenTypes])
 
-  // Decorate edges - fade unrelated ones on hover, glow hovered ones.
   const displayEdges = useMemo(() => {
-    if (!hoveredId) return edges
+    const hiddenSet = hiddenTypes ?? new Set()
+
+    // Build set of visible node ids for edge filtering.
+    const visibleIds = new Set(
+      nodes.filter(n => !hiddenSet.has(n.data?.fileType)).map(n => n.id)
+    )
+
     return edges.map(e => {
+      if (!visibleIds.has(e.source) || !visibleIds.has(e.target)) {
+        return { ...e, hidden: true }
+      }
+
+      // Impact edge coloring.
+      if (impact) {
+        const srcIsCenter = e.source === impact.centerId
+        const tgtIsCenter = e.target === impact.centerId
+        const srcIsAnc = impact.ancestors.has(e.source)
+        const tgtIsAnc = impact.ancestors.has(e.target)
+        const srcIsDesc = impact.descendants.has(e.source)
+        const tgtIsDesc = impact.descendants.has(e.target)
+
+        const ancestorEdge = (srcIsAnc && tgtIsCenter) || (srcIsAnc && tgtIsAnc)
+        const descendantEdge = (srcIsCenter && tgtIsDesc) || (srcIsDesc && tgtIsDesc)
+
+        if (ancestorEdge) {
+          return { ...e, hidden: false, animated: false, style: { stroke: '#f87171', strokeWidth: 1.5, opacity: 0.8 } }
+        }
+        if (descendantEdge) {
+          return { ...e, hidden: false, animated: false, style: { stroke: '#60a5fa', strokeWidth: 1.5, opacity: 0.8 } }
+        }
+        return { ...e, hidden: false, style: { stroke: '#CDCDD1', strokeWidth: 0.5, opacity: 0.2 } }
+      }
+
+      // Hover behaviour.
+      if (!hoveredId) return { ...e, hidden: false }
       const connected = e.source === hoveredId || e.target === hoveredId
       return {
         ...e,
+        hidden: false,
         animated: connected,
         style: {
           ...(e.style ?? {}),
@@ -103,7 +162,7 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths }) {
         },
       }
     })
-  }, [edges, hoveredId])
+  }, [edges, hoveredId, impact, hiddenTypes, nodes])
 
   const handleNodeClick = useCallback((event, node) => {
     if (onNodeClick) onNodeClick(node)
@@ -142,7 +201,7 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths }) {
   )
 }
 
-export default function Graph({ graphData, onNodeClick, highlightedPaths }) {
+export default function Graph({ graphData, onNodeClick, highlightedPaths, impact, hiddenTypes, focusNodeId }) {
   if (!graphData || !graphData.nodes.length) {
     return (
       <div className="flex items-center justify-center h-full text-[var(--text-tertiary)] text-sm">
@@ -157,6 +216,9 @@ export default function Graph({ graphData, onNodeClick, highlightedPaths }) {
         graphData={graphData}
         onNodeClick={onNodeClick}
         highlightedPaths={highlightedPaths}
+        impact={impact}
+        hiddenTypes={hiddenTypes}
+        focusNodeId={focusNodeId}
       />
     </ReactFlowProvider>
   )

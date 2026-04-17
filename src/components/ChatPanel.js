@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { PROVIDERS } from '@/lib/llmProviders'
 import LLMSettings from './LLMSettings'
 
@@ -23,6 +23,8 @@ export default function ChatPanel({ graphContext, onHighlight }) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [summarising, setSummarising] = useState(false)
+  const summaryAttempted = useRef(false)
   const scrollRef = useRef(null)
 
   // Load saved config on mount (client only).
@@ -46,6 +48,50 @@ export default function ChatPanel({ graphContext, onHighlight }) {
     if (!el) return
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }, [messages, loading])
+
+  // Fire auto-summary once when config + graphContext are both ready and chat is empty.
+  useEffect(() => {
+    if (
+      !config ||
+      !graphContext?.nodes?.length ||
+      summaryAttempted.current ||
+      messages.length > 0
+    ) return
+
+    summaryAttempted.current = true
+    setSummarising(true)
+
+    const run = async () => {
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: 'Summarise this codebase.' }],
+            graphContext,
+            provider: config.provider,
+            model: config.model,
+            apiKey: config.apiKey,
+            isAutoSummary: true,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data?.error ?? `request failed (${res.status})`)
+
+        const { display, highlights } = parseHighlights(data.text ?? '')
+        setMessages([{ role: 'assistant', content: display, highlights, isAutoSummary: true }])
+        if (highlights.length && typeof onHighlight === 'function') {
+          onHighlight(highlights)
+        }
+      } catch {
+        // Fail silently — chat still works normally without the summary
+      } finally {
+        setSummarising(false)
+      }
+    }
+
+    run()
+  }, [config, graphContext]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function saveConfig(next) {
     setConfig(next)
@@ -169,7 +215,14 @@ export default function ChatPanel({ graphContext, onHighlight }) {
           </div>
         )}
 
-        {configLoaded && config && !editingConfig && messages.length === 0 && !loading && <EmptyState />}
+        {configLoaded && config && !editingConfig && messages.length === 0 && !loading && !summarising && <EmptyState />}
+
+        {summarising && (
+          <div className="flex items-center gap-2 text-[13px] text-[var(--text-tertiary)]">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--green-primary)] animate-pulse" />
+            Analysing codebase...
+          </div>
+        )}
 
         {configLoaded && config && !editingConfig && messages.map((m, i) => (
           <Message
@@ -177,6 +230,7 @@ export default function ChatPanel({ graphContext, onHighlight }) {
             role={m.role}
             content={m.content}
             highlights={m.highlights}
+            isAutoSummary={m.isAutoSummary}
             onHighlight={onHighlight}
           />
         ))}
@@ -239,7 +293,7 @@ function EmptyState() {
   )
 }
 
-function Message({ role, content, highlights, onHighlight }) {
+function Message({ role, content, highlights, isAutoSummary, onHighlight }) {
   const isUser = role === 'user'
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -247,9 +301,17 @@ function Message({ role, content, highlights, onHighlight }) {
         className={`max-w-[88%] px-3.5 py-2.5 rounded-xl text-[13px] leading-relaxed whitespace-pre-wrap break-words ${
           isUser
             ? 'bg-[var(--green-primary)] text-white'
+            : isAutoSummary
+            ? 'bg-[var(--green-light)] border border-[var(--green-border)] text-[var(--text-primary)]'
             : 'bg-white border border-[var(--border)] text-[var(--text-primary)]'
         }`}
       >
+        {isAutoSummary && (
+          <div className="flex items-center gap-1.5 mb-2 text-[11px] font-medium text-[var(--green-primary)] uppercase tracking-wide">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--green-primary)]" />
+            Codebase overview
+          </div>
+        )}
         {content}
         {!isUser && highlights && highlights.length > 0 && (
           <div className="mt-2.5 pt-2.5 border-t border-[var(--border)] flex flex-wrap gap-1.5">

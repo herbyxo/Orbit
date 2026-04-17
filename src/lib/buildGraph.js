@@ -75,6 +75,8 @@ export function buildGraph(files) {
     const fileName = filePath.split('/').pop()
     const fileType = classifyFile(filePath)
 
+    const content = files[filePath] ?? ''
+
     return {
       id: filePath,
       type: 'fileNode',
@@ -83,9 +85,10 @@ export function buildGraph(files) {
         fullPath: filePath,
         fileType,
         color: FILE_TYPE_COLORS[fileType] || '#8E8EA0',
-        content: files[filePath],
+        content,
         imports: importMap[filePath] || [],
         importedBy: importedByMap[filePath] || [],
+        loc: content ? content.split('\n').length : 0,
       },
       position: { x: 0, y: 0 }, // will be set by d3-force layout
     }
