@@ -5,7 +5,17 @@ import { useRouter } from 'next/navigation'
 import Graph from '@/components/Graph'
 import NodeDetail from '@/components/NodeDetail'
 import ChatPanel from '@/components/ChatPanel'
+import SearchOverlay from '@/components/SearchOverlay'
 import { buildGraphContext } from '@/lib/graphContext'
+import { computeImpact } from '@/lib/graphUtils'
+
+const FILE_TYPE_COLORS = {
+  page: '#10A37F',
+  component: '#3B82F6',
+  util: '#8E8EA0',
+  api: '#F59E0B',
+  config: '#8B5CF6',
+}
 
 export default function GraphPage() {
   const router = useRouter()
@@ -14,6 +24,19 @@ export default function GraphPage() {
   const [highlightedPaths, setHighlightedPaths] = useState([])
   const [chatOpen, setChatOpen] = useState(true)
   const [loading, setLoading] = useState(true)
+
+  // Impact mode
+  const [impactMode, setImpactMode] = useState(false)
+  const [impact, setImpact] = useState(null)
+
+  // Node type visibility (set of hidden types)
+  const [hiddenTypes, setHiddenTypes] = useState(new Set())
+
+  // Focus a node in the graph (from search)
+  const [focusNodeId, setFocusNodeId] = useState(null)
+
+  // Search overlay
+  const [searchOpen, setSearchOpen] = useState(false)
 
   useEffect(() => {
     const stored = sessionStorage.getItem('orbit-graph')
@@ -29,11 +52,56 @@ export default function GraphPage() {
     setLoading(false)
   }, [router])
 
+  // Cmd+K / Ctrl+K
+  useEffect(() => {
+    function handleKey(e) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setSearchOpen(v => !v)
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [])
+
   const graphContext = useMemo(() => buildGraphContext(graphData), [graphData])
 
   const handleHighlight = useCallback((paths) => {
     setHighlightedPaths(paths)
   }, [])
+
+  const handleNodeClick = useCallback((node) => {
+    setSelectedNode(node)
+    if (impactMode && graphData) {
+      setImpact(computeImpact(node.id, graphData.edges))
+    } else {
+      setImpact(null)
+    }
+  }, [impactMode, graphData])
+
+  function toggleImpactMode() {
+    setImpactMode(v => {
+      if (v) setImpact(null)
+      return !v
+    })
+  }
+
+  function toggleType(type) {
+    setHiddenTypes(prev => {
+      const next = new Set(prev)
+      if (next.has(type)) next.delete(type)
+      else next.add(type)
+      return next
+    })
+  }
+
+  function handleSearchSelect(nodeId) {
+    const node = graphData?.nodes.find(n => n.id === nodeId)
+    if (node) {
+      setSelectedNode(node)
+      setFocusNodeId({ id: nodeId, ts: Date.now() })
+    }
+  }
 
   if (loading) {
     return (
@@ -48,11 +116,7 @@ export default function GraphPage() {
 
   if (!graphData) return null
 
-  const stats = {
-    files: graphData.nodes.length,
-    edges: graphData.edges.length,
-    types: [...new Set(graphData.nodes.map(n => n.data.fileType))],
-  }
+  const allTypes = [...new Set(graphData.nodes.map(n => n.data.fileType))]
 
   return (
     <div className="h-screen flex flex-col">
@@ -69,32 +133,71 @@ export default function GraphPage() {
           </a>
           <div className="h-4 w-px bg-[var(--border)]" />
           <div className="flex items-center gap-3 text-xs text-[var(--text-tertiary)]">
-            <span>{stats.files} files</span>
-            <span>{stats.edges} connections</span>
+            <span>{graphData.nodes.length} files</span>
+            <span>{graphData.edges.length} connections</span>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3">
-            {[
-              { type: 'page', color: '#10A37F' },
-              { type: 'component', color: '#3B82F6' },
-              { type: 'util', color: '#8E8EA0' },
-              { type: 'api', color: '#F59E0B' },
-              { type: 'config', color: '#8B5CF6' },
-            ]
-              .filter(t => stats.types.includes(t.type))
-              .map(t => (
-                <div key={t.type} className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: t.color }} />
-                  <span className="text-[11px] text-[var(--text-tertiary)]">{t.type}</span>
-                </div>
-              ))
-            }
+        <div className="flex items-center gap-2">
+          {/* Type filter pills */}
+          <div className="flex items-center gap-1.5">
+            {allTypes.map(type => {
+              const color = FILE_TYPE_COLORS[type] ?? '#8E8EA0'
+              const hidden = hiddenTypes.has(type)
+              return (
+                <button
+                  key={type}
+                  onClick={() => toggleType(type)}
+                  title={hidden ? `Show ${type}` : `Hide ${type}`}
+                  className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] transition-colors ${
+                    hidden
+                      ? 'text-[var(--text-tertiary)] border border-dashed border-[var(--border)] opacity-50'
+                      : 'text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--bg-secondary)]'
+                  }`}
+                >
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: hidden ? '#ccc' : color }} />
+                  {type}
+                </button>
+              )
+            })}
           </div>
 
           <div className="h-4 w-px bg-[var(--border)]" />
 
+          {/* Impact Mode toggle */}
+          <button
+            onClick={toggleImpactMode}
+            title="Impact mode — click a node to see blast radius"
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors ${
+              impactMode
+                ? 'bg-orange-50 text-orange-600 border border-orange-200'
+                : 'text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--bg-secondary)]'
+            }`}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            Impact
+          </button>
+
+          {/* Search */}
+          <button
+            onClick={() => setSearchOpen(true)}
+            title="Search files (Ctrl+K)"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--bg-secondary)] transition-colors"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <kbd className="text-[10px] text-[var(--text-tertiary)]">⌘K</kbd>
+          </button>
+
+          <div className="h-4 w-px bg-[var(--border)]" />
+
+          {/* Chat toggle */}
           <button
             onClick={() => setChatOpen(v => !v)}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors ${
@@ -115,14 +218,17 @@ export default function GraphPage() {
         <div className="flex-1 min-w-0">
           <Graph
             graphData={graphData}
-            onNodeClick={(node) => setSelectedNode(node)}
+            onNodeClick={handleNodeClick}
             highlightedPaths={highlightedPaths}
+            impact={impact}
+            hiddenTypes={hiddenTypes}
+            focusNodeId={focusNodeId}
           />
         </div>
 
         {selectedNode && (
           <div className="w-[380px] shrink-0 overflow-hidden">
-            <NodeDetail node={selectedNode} onClose={() => setSelectedNode(null)} />
+            <NodeDetail node={selectedNode} onClose={() => { setSelectedNode(null); setImpact(null) }} />
           </div>
         )}
 
@@ -132,6 +238,14 @@ export default function GraphPage() {
           </div>
         )}
       </div>
+
+      {searchOpen && (
+        <SearchOverlay
+          nodes={graphData.nodes}
+          onSelect={handleSearchSelect}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
     </div>
   )
 }
