@@ -5,6 +5,8 @@ import {
   ReactFlow,
   Background,
   Controls,
+  MiniMap,
+  Panel,
   useNodesState,
   useEdgesState,
   useReactFlow,
@@ -15,6 +17,22 @@ import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide } 
 import FileNode from './FileNode'
 
 const nodeTypes = { fileNode: FileNode }
+
+function FitViewControl() {
+  const { fitView } = useReactFlow()
+  return (
+    <Panel position="top-left">
+      <button
+        type="button"
+        onClick={() => fitView({ padding: 0.2, duration: 380 })}
+        title="Fit entire graph in view"
+        className="px-2.5 py-1.5 rounded-lg text-[12px] font-medium text-[var(--text-secondary)] bg-white border border-[var(--border)] shadow-sm hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)] transition-colors"
+      >
+        Fit view
+      </button>
+    </Panel>
+  )
+}
 
 /**
  * Run d3-force simulation to compute node positions.
@@ -191,11 +209,21 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTy
       minZoom={0.1}
       maxZoom={2}
       proOptions={{ hideAttribution: true }}
+      className="orbit-graph-surface"
     >
       <Background color="var(--border)" gap={32} size={1} />
       <Controls
         showInteractive={false}
         className="!bg-white !border-[var(--border)] !rounded-lg !shadow-sm"
+      />
+      <FitViewControl />
+      <MiniMap
+        nodeStrokeWidth={2}
+        nodeColor={(n) => n.data?.color ?? '#8E8EA0'}
+        maskColor="rgba(247, 247, 248, 0.92)"
+        className="!bg-white !border !border-[var(--border)] !rounded-lg !shadow-sm !m-3"
+        pannable
+        zoomable
       />
     </ReactFlow>
   )

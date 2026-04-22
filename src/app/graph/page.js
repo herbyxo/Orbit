@@ -214,6 +214,27 @@ export default function GraphPage() {
         </div>
       </div>
 
+      {impactMode && (
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 border-b border-orange-100 bg-gradient-to-r from-orange-50/90 to-amber-50/50 shrink-0 text-[11px] text-orange-900/90">
+          <span className="font-medium text-orange-800">Impact mode</span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-orange-500 shrink-0" title="Selected" />
+            Selected file
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-red-400 shrink-0" />
+            Imports this — may break if you change it
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-blue-400 shrink-0" />
+            This file depends on these
+          </span>
+          {!selectedNode && (
+            <span className="text-orange-700/80 italic">Click a node to trace blast radius.</span>
+          )}
+        </div>
+      )}
+
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 min-w-0">
           <Graph

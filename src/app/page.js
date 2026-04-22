@@ -68,9 +68,9 @@ export default function Home() {
   }
 
   return (
-    <>
+    <div className="orbit-landing-bg">
       {/* Nav */}
-      <nav className="fixed top-0 left-0 right-0 z-10 px-8 py-4 flex justify-between items-center bg-white/85 backdrop-blur-xl border-b border-[var(--border)]">
+      <nav className="fixed top-0 left-0 right-0 z-10 px-8 py-4 flex justify-between items-center bg-white/80 backdrop-blur-xl border-b border-[var(--border)]">
         <a href="/" className="flex items-center gap-2.5 no-underline">
           <svg width="28" height="28" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
             <ellipse cx="16" cy="16" rx="14" ry="6" transform="rotate(-30 16 16)" fill="none" stroke="var(--text-primary)" strokeWidth="1.5" />
@@ -90,7 +90,7 @@ export default function Home() {
         <div className="text-center mb-10 animate-fade-up">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[var(--green-border)] bg-[var(--green-light)] font-mono text-xs font-medium text-[var(--green-primary)] mb-6">
             <span className="w-1.5 h-1.5 rounded-full bg-[var(--green-primary)] animate-pulse-dot" />
-            v1.0 — React & Next.js
+            v1.1 — Graph, AI chat, impact mode
           </div>
           <h1 className="font-semibold text-5xl leading-tight text-[var(--text-primary)] mb-3.5 tracking-tighter">
             See your codebase.<br />
@@ -99,6 +99,21 @@ export default function Home() {
           <p className="text-base text-[var(--text-secondary)] leading-relaxed max-w-[460px] mx-auto">
             Paste a GitHub repo or drop a zip file. Orbit maps your code into an interactive graph and lets you explore it with AI.
           </p>
+          <div className="flex flex-wrap justify-center gap-2 mt-6 max-w-[520px] mx-auto">
+            {[
+              { label: 'Live import graph', sub: 'See how files connect' },
+              { label: 'BYO-key AI', sub: 'Your key, your data' },
+              { label: 'Blast radius', sub: 'Impact mode on any file' },
+            ].map((item) => (
+              <div
+                key={item.label}
+                className="px-3 py-2 rounded-lg bg-white/90 border border-[var(--border)] shadow-[0_1px_2px_rgba(0,0,0,0.04)] text-left"
+              >
+                <div className="text-[12px] font-medium text-[var(--text-primary)]">{item.label}</div>
+                <div className="text-[11px] text-[var(--text-tertiary)] mt-0.5">{item.sub}</div>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Input section */}
@@ -213,6 +228,6 @@ export default function Home() {
           </div>
         </div>
       </div>
-    </>
+    </div>
   )
 }
