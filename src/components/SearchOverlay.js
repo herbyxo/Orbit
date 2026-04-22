@@ -9,13 +9,24 @@ import { searchNodes } from '@/lib/graphUtils'
  */
 export default function SearchOverlay({ nodes, onSelect, onClose }) {
   const [query, setQuery] = useState('')
+  const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef(null)
+  const listRef = useRef(null)
 
   const results = searchNodes(nodes, query)
 
   useEffect(() => {
     inputRef.current?.focus()
   }, [])
+
+  useEffect(() => {
+    setSelectedIndex(0)
+  }, [query])
+
+  useEffect(() => {
+    const el = listRef.current?.querySelector(`[data-search-index="${selectedIndex}"]`)
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [selectedIndex, results.length])
 
   useEffect(() => {
     function handleKey(e) {
@@ -31,14 +42,24 @@ export default function SearchOverlay({ nodes, onSelect, onClose }) {
   }
 
   function handleKeyDown(e) {
-    if (e.key === 'Enter' && results.length > 0) {
-      handleSelect(results[0])
+    if (!query.trim() || results.length === 0) return
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setSelectedIndex((i) => Math.min(i + 1, results.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setSelectedIndex((i) => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const node = results[selectedIndex]
+      if (node) handleSelect(node)
     }
   }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[18vh]"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-[18vh] bg-black/20 backdrop-blur-[2px]"
       onClick={onClose}
     >
       <div
@@ -59,22 +80,32 @@ export default function SearchOverlay({ nodes, onSelect, onClose }) {
             placeholder="Jump to file..."
             className="flex-1 text-[14px] text-[var(--text-primary)] placeholder-[var(--text-tertiary)] outline-none"
           />
+          <span className="hidden sm:flex items-center gap-1 text-[10px] text-[var(--text-tertiary)]">
+            <kbd className="border border-[var(--border)] rounded px-1 py-0.5">↑</kbd>
+            <kbd className="border border-[var(--border)] rounded px-1 py-0.5">↓</kbd>
+          </span>
           <kbd className="text-[11px] text-[var(--text-tertiary)] border border-[var(--border)] rounded px-1.5 py-0.5">
             Esc
           </kbd>
         </div>
 
         {query.trim() && (
-          <ul className="max-h-[320px] overflow-y-auto py-1">
+          <ul ref={listRef} className="max-h-[320px] overflow-y-auto py-1">
             {results.length === 0 ? (
               <li className="px-4 py-3 text-[13px] text-[var(--text-tertiary)]">No files match.</li>
             ) : (
-              results.map((node) => (
+              results.map((node, idx) => (
                 <li key={node.id}>
                   <button
                     type="button"
+                    data-search-index={idx}
                     onClick={() => handleSelect(node)}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--bg-secondary)] text-left transition-colors"
+                    onMouseEnter={() => setSelectedIndex(idx)}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
+                      idx === selectedIndex
+                        ? 'bg-[var(--green-light)] border-l-2 border-l-[var(--green-primary)]'
+                        : 'hover:bg-[var(--bg-secondary)] border-l-2 border-l-transparent'
+                    }`}
                   >
                     <div
                       className="w-2 h-2 rounded-full shrink-0"

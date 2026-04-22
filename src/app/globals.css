@@ -49,3 +49,17 @@ body {
 .animate-pulse-dot {
   animation: pulse-dot 2.5s ease-in-out infinite;
 }
+
+/* Landing page — soft radial wash + cool neutral base */
+.orbit-landing-bg {
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse 85% 55% at 50% -18%, rgba(16, 163, 127, 0.11), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 50%, rgba(59, 130, 246, 0.05), transparent 50%),
+    linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg) 42%);
+}
+
+/* Graph canvas sits on a slightly cooler surface than pure white */
+.orbit-graph-surface {
+  background: linear-gradient(165deg, #fafbfc 0%, #f4f5f7 100%);
+}

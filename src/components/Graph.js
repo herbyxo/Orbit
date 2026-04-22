@@ -5,6 +5,7 @@ import {
   ReactFlow,
   Background,
   Controls,
+  MiniMap,
   Panel,
   useNodesState,
   useEdgesState,
@@ -246,6 +247,7 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTy
       minZoom={0.1}
       maxZoom={2}
       proOptions={{ hideAttribution: true }}
+      className="orbit-graph-surface"
     >
       <Background color="var(--border)" gap={32} size={1} />
       <Controls
@@ -253,8 +255,9 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTy
         className="!bg-white !border-[var(--border)] !rounded-lg !shadow-sm"
       />
 
-      {subgraphFocusId && (
-        <Panel position="top-left">
+      {/* top-left: subgraph focus badge when active, otherwise fit-view button */}
+      <Panel position="top-left">
+        {subgraphFocusId ? (
           <div className="flex items-center gap-2 px-3 py-2 bg-white border border-[var(--border)] rounded-lg shadow-sm text-[12px]">
             <div className="w-2 h-2 rounded-full bg-[var(--green-primary)] shrink-0" />
             <span className="font-medium text-[var(--text-primary)] font-mono">{focusedNodeLabel}</span>
@@ -267,8 +270,26 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTy
               ✕
             </button>
           </div>
-        </Panel>
-      )}
+        ) : (
+          <button
+            type="button"
+            onClick={() => reactFlow.fitView({ padding: 0.2, duration: 380 })}
+            title="Fit entire graph in view"
+            className="px-2.5 py-1.5 rounded-lg text-[12px] font-medium text-[var(--text-secondary)] bg-white border border-[var(--border)] shadow-sm hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)] transition-colors"
+          >
+            Fit view
+          </button>
+        )}
+      </Panel>
+
+      <MiniMap
+        nodeStrokeWidth={2}
+        nodeColor={(n) => n.data?.color ?? '#8E8EA0'}
+        maskColor="rgba(247, 247, 248, 0.92)"
+        className="!bg-white !border !border-[var(--border)] !rounded-lg !shadow-sm !m-3"
+        pannable
+        zoomable
+      />
     </ReactFlow>
   )
 }
