@@ -37,8 +37,8 @@ export default function Home() {
     }
   }
 
-  async function handleUrl() {
-    const url = repoUrl.trim()
+  async function handleUrl(urlOverride) {
+    const url = (urlOverride ?? repoUrl).trim()
     if (!url) return
     setLoading(true)
     setError('')
@@ -141,6 +141,19 @@ export default function Home() {
               {loading ? 'Loading...' : 'Visualise'}
             </button>
           </div>
+
+          {/* Demo hint */}
+          <p className="text-[12px] text-center text-[var(--text-tertiary)] mt-2 mb-1">
+            No repo handy?{' '}
+            <button
+              type="button"
+              onClick={() => handleUrl('https://github.com/herbyxo/Orbit')}
+              disabled={loading}
+              className="text-[var(--green-primary)] hover:underline disabled:opacity-50 font-medium"
+            >
+              Try Orbit on itself →
+            </button>
+          </p>
 
           {/* Divider */}
           <div className="flex items-center gap-3.5 my-1.5">

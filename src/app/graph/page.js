@@ -7,7 +7,7 @@ import NodeDetail from '@/components/NodeDetail'
 import ChatPanel from '@/components/ChatPanel'
 import SearchOverlay from '@/components/SearchOverlay'
 import { buildGraphContext } from '@/lib/graphContext'
-import { computeImpact } from '@/lib/graphUtils'
+import { computeImpact, detectCycles } from '@/lib/graphUtils'
 
 const FILE_TYPE_COLORS = {
   page: '#10A37F',
@@ -65,6 +65,10 @@ export default function GraphPage() {
   }, [])
 
   const graphContext = useMemo(() => buildGraphContext(graphData), [graphData])
+  const cycleInfo = useMemo(
+    () => graphData ? detectCycles(graphData.nodes, graphData.edges) : null,
+    [graphData]
+  )
 
   const handleHighlight = useCallback((paths) => {
     setHighlightedPaths(paths)
@@ -135,6 +139,14 @@ export default function GraphPage() {
           <div className="flex items-center gap-3 text-xs text-[var(--text-tertiary)]">
             <span>{graphData.nodes.length} files</span>
             <span>{graphData.edges.length} connections</span>
+            {cycleInfo?.count > 0 && (
+              <span className="flex items-center gap-1 text-red-500 font-medium">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2" />
+                </svg>
+                {cycleInfo.count} circular {cycleInfo.count === 1 ? 'dep' : 'deps'}
+              </span>
+            )}
           </div>
         </div>
 
@@ -244,6 +256,7 @@ export default function GraphPage() {
             impact={impact}
             hiddenTypes={hiddenTypes}
             focusNodeId={focusNodeId}
+            cycleInfo={cycleInfo}
           />
         </div>
 

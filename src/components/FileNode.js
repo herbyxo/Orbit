@@ -19,9 +19,13 @@ const SIZE_CLASSES = {
 }
 
 export default function FileNode({ data, selected }) {
-  const { isHighlighted, isDimmed, isFocused, isImpactCenter, isAncestor, isDescendant } = data
+  const {
+    isHighlighted, isDimmed, isFocused,
+    isImpactCenter, isAncestor, isDescendant,
+    isCircularDep,
+  } = data
 
-  // Priority: highlighted (AI) > impactCenter > ancestor > descendant > focused (hover) > selected > default
+  // Priority: highlighted (AI) > impactCenter > ancestor > descendant > circularDep > focused > selected > default
   const borderClass = isHighlighted
     ? 'border-[var(--green-primary)] shadow-[0_0_0_3px_rgba(16,163,127,0.35)]'
     : isImpactCenter
@@ -30,6 +34,8 @@ export default function FileNode({ data, selected }) {
     ? 'border-red-400 shadow-[0_0_0_2px_rgba(248,113,113,0.3)]'
     : isDescendant
     ? 'border-blue-400 shadow-[0_0_0_2px_rgba(96,165,250,0.3)]'
+    : isCircularDep
+    ? 'border-red-500 shadow-[0_0_0_2px_rgba(239,68,68,0.25)]'
     : isFocused
     ? 'border-[var(--green-primary)] shadow-[0_0_0_2px_rgba(16,163,127,0.2)]'
     : selected
@@ -42,6 +48,8 @@ export default function FileNode({ data, selected }) {
     ? 'rgba(255,241,242,1)'
     : isDescendant
     ? 'rgba(239,246,255,1)'
+    : isCircularDep
+    ? 'rgba(255,245,245,1)'
     : 'white'
 
   const sizeTier = getSizeTier(data.loc ?? 0)
@@ -67,12 +75,21 @@ export default function FileNode({ data, selected }) {
           style={{ backgroundColor: data.color }}
         />
         <span
-          className={`font-medium text-[var(--text-primary)] truncate ${
+          className={`font-medium text-[var(--text-primary)] truncate flex-1 min-w-0 ${
             sizeTier === 'lg' ? 'text-[13px]' : 'text-[12px]'
           }`}
         >
           {data.label}
         </span>
+        {isCircularDep && (
+          <svg
+            width="11" height="11" viewBox="0 0 24 24" fill="none"
+            stroke="#EF4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            className="shrink-0" title="Circular dependency"
+          >
+            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2" />
+          </svg>
+        )}
       </div>
 
       <div className="flex items-center justify-between mt-0.5">
