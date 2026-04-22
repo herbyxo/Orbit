@@ -62,8 +62,9 @@ function layoutNodes(graphNodes, graphEdges) {
  * @param {{ centerId: string, ancestors: Set<string>, descendants: Set<string> } | null} props.impact
  * @param {Set<string>} props.hiddenTypes
  * @param {{ id: string, ts: number } | null} props.focusNodeId - pan to this node (from search)
+ * @param {{ count: number, cycleNodes: Set<string>, cycleEdgeIds: Set<string> } | null} props.cycleInfo
  */
-function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTypes, focusNodeId }) {
+function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTypes, focusNodeId, cycleInfo }) {
   const reactFlow = useReactFlow()
 
   const laidOutNodes = useMemo(
@@ -97,7 +98,6 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTy
   useEffect(() => {
     const padding = subgraphFocusId ? 0.35 : 0.2
     const duration = 500
-    // Small delay so React can apply hidden flags to nodes first.
     const id = setTimeout(() => reactFlow.fitView({ padding, duration }), 60)
     return () => clearTimeout(id)
   }, [subgraphFocusId]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -117,12 +117,10 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTy
   const focusSubgraph = useMemo(() => {
     if (!subgraphFocusId) return null
     const scope = new Set([subgraphFocusId])
-    // Degree 1
     for (const e of edges) {
       if (e.source === subgraphFocusId) scope.add(e.target)
       if (e.target === subgraphFocusId) scope.add(e.source)
     }
-    // Degree 2
     const deg1 = new Set(scope)
     for (const e of edges) {
       if (deg1.has(e.source)) scope.add(e.target)
@@ -150,15 +148,15 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTy
           isImpactCenter: impact?.centerId === n.id,
           isAncestor: impact ? impact.ancestors.has(n.id) : false,
           isDescendant: impact ? impact.descendants.has(n.id) : false,
+          isCircularDep: cycleInfo ? cycleInfo.cycleNodes.has(n.id) : false,
         },
       }
     })
-  }, [nodes, hoveredId, neighbours, highlightedPaths, impact, hiddenTypes, focusSubgraph])
+  }, [nodes, hoveredId, neighbours, highlightedPaths, impact, hiddenTypes, focusSubgraph, cycleInfo])
 
   const displayEdges = useMemo(() => {
     const hiddenSet = hiddenTypes ?? new Set()
 
-    // Visible node ids: must pass type filter AND focus filter.
     const visibleIds = new Set(
       nodes
         .filter(n =>
@@ -173,7 +171,9 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTy
         return { ...e, hidden: true }
       }
 
-      // Impact edge colouring.
+      const isCycleEdge = cycleInfo?.cycleEdgeIds.has(e.id) ?? false
+
+      // Impact edge colouring takes priority.
       if (impact) {
         const srcIsCenter = e.source === impact.centerId
         const tgtIsCenter = e.target === impact.centerId
@@ -185,13 +185,19 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTy
         const ancestorEdge = (srcIsAnc && tgtIsCenter) || (srcIsAnc && tgtIsAnc)
         const descendantEdge = (srcIsCenter && tgtIsDesc) || (srcIsDesc && tgtIsDesc)
 
-        if (ancestorEdge) {
-          return { ...e, hidden: false, animated: false, style: { stroke: '#f87171', strokeWidth: 1.5, opacity: 0.8 } }
-        }
-        if (descendantEdge) {
-          return { ...e, hidden: false, animated: false, style: { stroke: '#60a5fa', strokeWidth: 1.5, opacity: 0.8 } }
-        }
+        if (ancestorEdge) return { ...e, hidden: false, animated: false, style: { stroke: '#f87171', strokeWidth: 1.5, opacity: 0.8 } }
+        if (descendantEdge) return { ...e, hidden: false, animated: false, style: { stroke: '#60a5fa', strokeWidth: 1.5, opacity: 0.8 } }
         return { ...e, hidden: false, style: { stroke: '#CDCDD1', strokeWidth: 0.5, opacity: 0.2 } }
+      }
+
+      // Cycle edges: always red when no other mode overrides.
+      if (isCycleEdge) {
+        return {
+          ...e,
+          hidden: false,
+          animated: true,
+          style: { stroke: '#EF4444', strokeWidth: 1.5, opacity: 0.7 },
+        }
       }
 
       // Hover behaviour.
@@ -209,7 +215,7 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTy
         },
       }
     })
-  }, [edges, hoveredId, impact, hiddenTypes, nodes, focusSubgraph])
+  }, [edges, hoveredId, impact, hiddenTypes, nodes, focusSubgraph, cycleInfo])
 
   const handleNodeClick = useCallback((event, node) => {
     if (onNodeClick) onNodeClick(node)
@@ -294,7 +300,7 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTy
   )
 }
 
-export default function Graph({ graphData, onNodeClick, highlightedPaths, impact, hiddenTypes, focusNodeId }) {
+export default function Graph({ graphData, onNodeClick, highlightedPaths, impact, hiddenTypes, focusNodeId, cycleInfo }) {
   if (!graphData || !graphData.nodes.length) {
     return (
       <div className="flex items-center justify-center h-full text-[var(--text-tertiary)] text-sm">
@@ -312,6 +318,7 @@ export default function Graph({ graphData, onNodeClick, highlightedPaths, impact
         impact={impact}
         hiddenTypes={hiddenTypes}
         focusNodeId={focusNodeId}
+        cycleInfo={cycleInfo}
       />
     </ReactFlowProvider>
   )
