@@ -5,6 +5,7 @@ import {
   ReactFlow,
   Background,
   Controls,
+  Panel,
   useNodesState,
   useEdgesState,
   useReactFlow,
@@ -17,6 +18,17 @@ import FileNode from './FileNode'
 const nodeTypes = { fileNode: FileNode }
 
 /**
+ * LOC-based collide radius for d3-force — mirrors FileNode size tiers so
+ * the layout gives physically larger nodes more breathing room.
+ */
+function collideRadius(node) {
+  const loc = node.data?.loc ?? 0
+  if (loc > 200) return 105
+  if (loc > 80) return 88
+  return 72
+}
+
+/**
  * Run d3-force simulation to compute node positions.
  */
 function layoutNodes(graphNodes, graphEdges) {
@@ -24,18 +36,16 @@ function layoutNodes(graphNodes, graphEdges) {
   const simLinks = graphEdges.map(e => ({ source: e.source, target: e.target }))
 
   const simulation = forceSimulation(simNodes)
-    .force('link', forceLink(simLinks).id(d => d.id).distance(150))
-    .force('charge', forceManyBody().strength(-400))
+    .force('link', forceLink(simLinks).id(d => d.id).distance(160))
+    .force('charge', forceManyBody().strength(-450))
     .force('center', forceCenter(500, 400))
-    .force('collide', forceCollide(80))
+    .force('collide', forceCollide(collideRadius))
     .stop()
 
   for (let i = 0; i < 200; i++) simulation.tick()
 
   const posMap = {}
-  simNodes.forEach(n => {
-    posMap[n.id] = { x: n.x, y: n.y }
-  })
+  simNodes.forEach(n => { posMap[n.id] = { x: n.x, y: n.y } })
 
   return graphNodes.map(n => ({
     ...n,
@@ -49,8 +59,8 @@ function layoutNodes(graphNodes, graphEdges) {
  * @param {Function} props.onNodeClick
  * @param {string[]} props.highlightedPaths
  * @param {{ centerId: string, ancestors: Set<string>, descendants: Set<string> } | null} props.impact
- * @param {Set<string>} props.hiddenTypes - file types to hide
- * @param {{ id: string, ts: number } | null} props.focusNodeId - pan to this node
+ * @param {Set<string>} props.hiddenTypes
+ * @param {{ id: string, ts: number } | null} props.focusNodeId - pan to this node (from search)
  */
 function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTypes, focusNodeId }) {
   const reactFlow = useReactFlow()
@@ -71,13 +81,25 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTy
 
   const [hoveredId, setHoveredId] = useState(null)
 
-  // Pan to focusNodeId when it changes.
+  // Subgraph focus — double-click a node to zoom to its 2-degree neighbourhood.
+  const [subgraphFocusId, setSubgraphFocusId] = useState(null)
+
+  // Pan to focusNodeId (from search) when it changes.
   useEffect(() => {
     if (!focusNodeId?.id) return
     const node = nodes.find(n => n.id === focusNodeId.id)
     if (!node) return
     reactFlow.setCenter(node.position.x, node.position.y, { zoom: 1.4, duration: 600 })
   }, [focusNodeId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-fit when entering / exiting subgraph focus.
+  useEffect(() => {
+    const padding = subgraphFocusId ? 0.35 : 0.2
+    const duration = 500
+    // Small delay so React can apply hidden flags to nodes first.
+    const id = setTimeout(() => reactFlow.fitView({ padding, duration }), 60)
+    return () => clearTimeout(id)
+  }, [subgraphFocusId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pre-compute adjacency for hover-dim behaviour.
   const neighbours = useMemo(() => {
@@ -90,16 +112,35 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTy
     return map
   }, [nodes, edges])
 
+  // 2-degree neighbourhood for subgraph focus.
+  const focusSubgraph = useMemo(() => {
+    if (!subgraphFocusId) return null
+    const scope = new Set([subgraphFocusId])
+    // Degree 1
+    for (const e of edges) {
+      if (e.source === subgraphFocusId) scope.add(e.target)
+      if (e.target === subgraphFocusId) scope.add(e.source)
+    }
+    // Degree 2
+    const deg1 = new Set(scope)
+    for (const e of edges) {
+      if (deg1.has(e.source)) scope.add(e.target)
+      if (deg1.has(e.target)) scope.add(e.source)
+    }
+    return scope
+  }, [subgraphFocusId, edges])
+
   const displayNodes = useMemo(() => {
     const highlightSet = new Set(highlightedPaths ?? [])
     const focused = hoveredId ? neighbours.get(hoveredId) : null
     const hiddenSet = hiddenTypes ?? new Set()
 
     return nodes.map(n => {
-      const hidden = hiddenSet.has(n.data?.fileType)
+      const typeHidden = hiddenSet.has(n.data?.fileType)
+      const focusHidden = focusSubgraph ? !focusSubgraph.has(n.id) : false
       return {
         ...n,
-        hidden,
+        hidden: typeHidden || focusHidden,
         data: {
           ...n.data,
           isHighlighted: highlightSet.has(n.data?.fullPath ?? n.id),
@@ -111,14 +152,19 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTy
         },
       }
     })
-  }, [nodes, hoveredId, neighbours, highlightedPaths, impact, hiddenTypes])
+  }, [nodes, hoveredId, neighbours, highlightedPaths, impact, hiddenTypes, focusSubgraph])
 
   const displayEdges = useMemo(() => {
     const hiddenSet = hiddenTypes ?? new Set()
 
-    // Build set of visible node ids for edge filtering.
+    // Visible node ids: must pass type filter AND focus filter.
     const visibleIds = new Set(
-      nodes.filter(n => !hiddenSet.has(n.data?.fileType)).map(n => n.id)
+      nodes
+        .filter(n =>
+          !hiddenSet.has(n.data?.fileType) &&
+          (!focusSubgraph || focusSubgraph.has(n.id))
+        )
+        .map(n => n.id)
     )
 
     return edges.map(e => {
@@ -126,7 +172,7 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTy
         return { ...e, hidden: true }
       }
 
-      // Impact edge coloring.
+      // Impact edge colouring.
       if (impact) {
         const srcIsCenter = e.source === impact.centerId
         const tgtIsCenter = e.target === impact.centerId
@@ -162,11 +208,15 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTy
         },
       }
     })
-  }, [edges, hoveredId, impact, hiddenTypes, nodes])
+  }, [edges, hoveredId, impact, hiddenTypes, nodes, focusSubgraph])
 
   const handleNodeClick = useCallback((event, node) => {
     if (onNodeClick) onNodeClick(node)
   }, [onNodeClick])
+
+  const handleNodeDoubleClick = useCallback((_e, node) => {
+    setSubgraphFocusId(prev => prev === node.id ? null : node.id)
+  }, [])
 
   const handleNodeMouseEnter = useCallback((_e, node) => {
     setHoveredId(node.id)
@@ -176,6 +226,10 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTy
     setHoveredId(null)
   }, [])
 
+  const focusedNodeLabel = subgraphFocusId
+    ? (nodes.find(n => n.id === subgraphFocusId)?.data?.label ?? subgraphFocusId)
+    : null
+
   return (
     <ReactFlow
       nodes={displayNodes}
@@ -183,6 +237,7 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTy
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       onNodeClick={handleNodeClick}
+      onNodeDoubleClick={handleNodeDoubleClick}
       onNodeMouseEnter={handleNodeMouseEnter}
       onNodeMouseLeave={handleNodeMouseLeave}
       nodeTypes={nodeTypes}
@@ -197,6 +252,23 @@ function GraphInner({ graphData, onNodeClick, highlightedPaths, impact, hiddenTy
         showInteractive={false}
         className="!bg-white !border-[var(--border)] !rounded-lg !shadow-sm"
       />
+
+      {subgraphFocusId && (
+        <Panel position="top-left">
+          <div className="flex items-center gap-2 px-3 py-2 bg-white border border-[var(--border)] rounded-lg shadow-sm text-[12px]">
+            <div className="w-2 h-2 rounded-full bg-[var(--green-primary)] shrink-0" />
+            <span className="font-medium text-[var(--text-primary)] font-mono">{focusedNodeLabel}</span>
+            <span className="text-[var(--text-tertiary)]">· 2° focus</span>
+            <button
+              onClick={() => setSubgraphFocusId(null)}
+              className="ml-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors leading-none"
+              title="Exit focus"
+            >
+              ✕
+            </button>
+          </div>
+        </Panel>
+      )}
     </ReactFlow>
   )
 }
