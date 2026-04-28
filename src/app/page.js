@@ -4,6 +4,7 @@ import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import JSZip from 'jszip'
 import { parseZipFiles } from '@/lib/parseZip'
+import { SITE_REPO, FEEDBACK_NEW_ISSUE, DEMO_REPO_URL } from '@/lib/site'
 
 export default function Home() {
   const router = useRouter()
@@ -37,8 +38,8 @@ export default function Home() {
     }
   }
 
-  async function handleUrl(urlOverride) {
-    const url = (urlOverride ?? repoUrl).trim()
+  async function handleUrl() {
+    const url = repoUrl.trim()
     if (!url) return
     setLoading(true)
     setError('')
@@ -54,6 +55,28 @@ export default function Home() {
       router.push('/graph')
     } catch (err) {
       setError('Failed to fetch repo. Make sure the URL is a valid public GitHub repository.')
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function loadDemoRepo() {
+    setRepoUrl(DEMO_REPO_URL)
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch('/api/parse-repo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: DEMO_REPO_URL }),
+      })
+      if (!res.ok) throw new Error('Failed to fetch repo')
+      const graphData = await res.json()
+      sessionStorage.setItem('orbit-graph', JSON.stringify(graphData))
+      router.push('/graph')
+    } catch (err) {
+      setError('Could not load the demo repo. Try pasting a GitHub URL instead.')
       console.error(err)
     } finally {
       setLoading(false)
@@ -79,9 +102,19 @@ export default function Home() {
           </svg>
           <span className="font-semibold text-[17px] text-[var(--text-primary)] tracking-tight">Orbit</span>
         </a>
-        <a href="https://github.com/herbyxo/Orbit" target="_blank" rel="noopener" className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
-          GitHub ↗
-        </a>
+        <div className="flex items-center gap-6">
+          <a
+            href={FEEDBACK_NEW_ISSUE}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+          >
+            Feedback
+          </a>
+          <a href={SITE_REPO} target="_blank" rel="noopener noreferrer" className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
+            GitHub ↗
+          </a>
+        </div>
       </nav>
 
       {/* Main */}
@@ -99,11 +132,15 @@ export default function Home() {
           <p className="text-base text-[var(--text-secondary)] leading-relaxed max-w-[460px] mx-auto">
             Paste a GitHub repo or drop a zip file. Orbit maps your code into an interactive graph and lets you explore it with AI.
           </p>
-          <div className="flex flex-wrap justify-center gap-2 mt-6 max-w-[520px] mx-auto">
+          <p className="text-sm text-[var(--text-tertiary)] leading-relaxed max-w-[480px] mx-auto mt-3">
+            Built from your real imports — always current. Not a hand-drawn diagram that goes stale the week after you write it.
+          </p>
+          <div className="flex flex-wrap justify-center gap-2 mt-6 max-w-[560px] mx-auto">
             {[
               { label: 'Live import graph', sub: 'See how files connect' },
-              { label: 'BYO-key AI', sub: 'Your key, your data' },
+              { label: 'BYO-key AI', sub: 'Your key never stored by us' },
               { label: 'Blast radius', sub: 'Impact mode on any file' },
+              { label: 'Import cycles', sub: 'Circular deps highlighted' },
             ].map((item) => (
               <div
                 key={item.label}
@@ -142,21 +179,19 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Demo hint */}
-          <p className="text-[12px] text-center text-[var(--text-tertiary)] mt-2 mb-1">
-            No repo handy?{' '}
+          <div className="flex justify-center mt-4">
             <button
               type="button"
-              onClick={() => handleUrl('https://github.com/herbyxo/Orbit')}
+              onClick={loadDemoRepo}
               disabled={loading}
-              className="text-[var(--green-primary)] hover:underline disabled:opacity-50 font-medium"
+              className="text-[13px] font-medium text-[var(--green-primary)] hover:text-[var(--green-hover)] disabled:opacity-50 transition-colors underline-offset-2 hover:underline"
             >
-              Try Orbit on itself →
+              Try Orbit on its own repo →
             </button>
-          </p>
+          </div>
 
           {/* Divider */}
-          <div className="flex items-center gap-3.5 my-1.5">
+          <div className="flex items-center gap-3.5 my-4">
             <div className="flex-1 h-px bg-[var(--border)]" />
             <span className="text-[13px] text-[var(--text-tertiary)]">or</span>
             <div className="flex-1 h-px bg-[var(--border)]" />
@@ -230,7 +265,7 @@ export default function Home() {
         </div>
 
         {/* Footer hints */}
-        <div className="flex justify-center gap-6 mt-9 animate-fade-up-delay">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap justify-center items-center gap-x-6 gap-y-2 mt-9 animate-fade-up-delay">
           <div className="flex items-center gap-1.5 text-[13px] text-[var(--text-tertiary)]">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
             Public repos only for v1
@@ -239,6 +274,14 @@ export default function Home() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
             Your code stays in the browser
           </div>
+          <a
+            href={FEEDBACK_NEW_ISSUE}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[13px] text-[var(--text-tertiary)] hover:text-[var(--green-primary)] transition-colors"
+          >
+            Something broken? Tell us →
+          </a>
         </div>
       </div>
     </div>
