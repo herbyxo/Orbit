@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { PROVIDERS } from '@/lib/llmProviders'
 import LLMSettings from './LLMSettings'
 
@@ -15,7 +15,13 @@ const STORAGE_KEY = 'orbit-llm-config'
  *   3. Once configured, show chat normally. Gear icon opens LLMSettings in edit mode.
  *   4. Every chat request carries { provider, model, apiKey } from state - server never stores.
  */
-export default function ChatPanel({ graphContext, onHighlight }) {
+export default function ChatPanel({
+  graphContext,
+  onHighlight,
+  onLlmConfiguredChange,
+  areaSummaryRequest,
+  onAreaSummaryFinished,
+}) {
   const [config, setConfig] = useState(null)
   const [configLoaded, setConfigLoaded] = useState(false)
   const [editingConfig, setEditingConfig] = useState(false)
@@ -26,6 +32,8 @@ export default function ChatPanel({ graphContext, onHighlight }) {
   const [summarising, setSummarising] = useState(false)
   const summaryAttempted = useRef(false)
   const scrollRef = useRef(null)
+  const messagesRef = useRef([])
+  const lastAreaRequestId = useRef(null)
 
   // Load saved config on mount (client only).
   useEffect(() => {
@@ -44,10 +52,80 @@ export default function ChatPanel({ graphContext, onHighlight }) {
   }, [])
 
   useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+
+  useEffect(() => {
+    if (typeof onLlmConfiguredChange === 'function') {
+      onLlmConfiguredChange(Boolean(config?.apiKey && config?.provider))
+    }
+  }, [config, onLlmConfiguredChange])
+
+  useEffect(() => {
     const el = scrollRef.current
     if (!el) return
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }, [messages, loading])
+
+  // One-shot AI summary for a folder "area" (scoped graph context).
+  useEffect(() => {
+    if (!areaSummaryRequest || !config || editingConfig) return
+    const { id, path, scopedContext } = areaSummaryRequest
+    if (scopedContext?.nodes?.length === 0) {
+      onAreaSummaryFinished?.()
+      return
+    }
+    if (lastAreaRequestId.current === id) return
+    lastAreaRequestId.current = id
+
+    const userLine = `Summarise the \`${path}\` area — purpose, main files, and how it connects to the rest of the app. Use [[highlight:path]] for key files here.`
+
+    ;(async () => {
+      setLoading(true)
+      setError(null)
+      const prev = messagesRef.current
+      const conversation = [...prev, { role: 'user', content: userLine }]
+      setMessages(conversation)
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: conversation.map((m) => ({ role: m.role, content: m.content })),
+            graphContext: scopedContext,
+            provider: config.provider,
+            model: config.model,
+            apiKey: config.apiKey,
+            isAreaSummary: true,
+            areaPath: path,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data?.error ?? `request failed (${res.status})`)
+
+        const { display, highlights } = parseHighlights(data.text ?? '')
+        setMessages((m) => [
+          ...m,
+          {
+            role: 'assistant',
+            content: display,
+            highlights,
+            areaSummaryPath: path,
+          },
+        ])
+        if (highlights.length && typeof onHighlight === 'function') {
+          onHighlight(highlights)
+        }
+      } catch (err) {
+        setError(err.message ?? 'something went wrong')
+        setMessages((m) => m.slice(0, -1))
+      } finally {
+        setLoading(false)
+        onAreaSummaryFinished?.()
+      }
+    })()
+  }, [areaSummaryRequest, config, editingConfig, onHighlight, onAreaSummaryFinished])
 
   // Fire auto-summary once when config + graphContext are both ready and chat is empty.
   useEffect(() => {
@@ -231,6 +309,7 @@ export default function ChatPanel({ graphContext, onHighlight }) {
             content={m.content}
             highlights={m.highlights}
             isAutoSummary={m.isAutoSummary}
+            areaSummaryPath={m.areaSummaryPath}
             onHighlight={onHighlight}
           />
         ))}
@@ -293,15 +372,16 @@ function EmptyState() {
   )
 }
 
-function Message({ role, content, highlights, isAutoSummary, onHighlight }) {
+function Message({ role, content, highlights, isAutoSummary, areaSummaryPath, onHighlight }) {
   const isUser = role === 'user'
+  const areaCard = Boolean(areaSummaryPath)
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
         className={`max-w-[88%] px-3.5 py-2.5 rounded-xl text-[13px] leading-relaxed whitespace-pre-wrap break-words ${
           isUser
             ? 'bg-[var(--green-primary)] text-white'
-            : isAutoSummary
+            : isAutoSummary || areaCard
             ? 'bg-[var(--green-light)] border border-[var(--green-border)] text-[var(--text-primary)]'
             : 'bg-white border border-[var(--border)] text-[var(--text-primary)]'
         }`}
@@ -310,6 +390,12 @@ function Message({ role, content, highlights, isAutoSummary, onHighlight }) {
           <div className="flex items-center gap-1.5 mb-2 text-[11px] font-medium text-[var(--green-primary)] uppercase tracking-wide">
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--green-primary)]" />
             Codebase overview
+          </div>
+        )}
+        {areaCard && !isAutoSummary && (
+          <div className="flex items-center gap-1.5 mb-2 text-[11px] font-medium text-[var(--green-primary)] uppercase tracking-wide">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--green-primary)]" />
+            Area · <span className="font-mono normal-case">{areaSummaryPath}</span>
           </div>
         )}
         {content}

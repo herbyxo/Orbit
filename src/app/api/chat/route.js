@@ -13,7 +13,16 @@ export const maxDuration = 30
 export async function POST(req) {
   try {
     const body = await req.json()
-    const { messages, graphContext, provider, model, apiKey, isAutoSummary } = body
+    const {
+      messages,
+      graphContext,
+      provider,
+      model,
+      apiKey,
+      isAutoSummary,
+      isAreaSummary,
+      areaPath,
+    } = body
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return Response.json(
@@ -29,9 +38,15 @@ export async function POST(req) {
       )
     }
 
-    const system = isAutoSummary
+    let system = isAutoSummary
       ? buildAutoSummaryPrompt(graphContext)
       : buildSystemPrompt(graphContext)
+
+    if (isAreaSummary && areaPath && typeof areaPath === 'string') {
+      system += `
+
+The user is focused on the "${areaPath}" code area (a folder group). The graph payload may only include files from this slice — import lists can still mention paths outside the group. Explain what this area is for, the main files, and how it connects to the rest of the app. Use [[highlight:path]] for the most important files in this area.`
+    }
 
     const { text, usage } = await callLLM({
       provider,
