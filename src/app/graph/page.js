@@ -1,11 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Graph from '@/components/Graph'
 import NodeDetail from '@/components/NodeDetail'
 import ChatPanel from '@/components/ChatPanel'
 import SearchOverlay from '@/components/SearchOverlay'
+import CodeAreasPanel from '@/components/CodeAreasPanel'
 import { buildGraphContext } from '@/lib/graphContext'
 import { computeImpact } from '@/lib/graphUtils'
 import { FEEDBACK_NEW_ISSUE } from '@/lib/site'
@@ -37,8 +38,11 @@ export default function GraphPage() {
   // Focus a node in the graph (from search)
   const [focusNodeId, setFocusNodeId] = useState(null)
 
-  // Search overlay
-  const [searchOpen, setSearchOpen] = useState(false)
+  // Code areas (folder groups)
+  const [areasOpen, setAreasOpen] = useState(false)
+  const [llmConfigured, setLlmConfigured] = useState(false)
+  const areaSummaryIdRef = useRef(0)
+  const [areaSummaryRequest, setAreaSummaryRequest] = useState(null)
 
   useEffect(() => {
     const stored = sessionStorage.getItem('orbit-graph')
@@ -96,6 +100,16 @@ export default function GraphPage() {
       return next
     })
   }
+
+  const handleAreaAiSummary = useCallback((path, scopedContext) => {
+    setChatOpen(true)
+    areaSummaryIdRef.current += 1
+    setAreaSummaryRequest({
+      id: areaSummaryIdRef.current,
+      path,
+      scopedContext,
+    })
+  }, [])
 
   function handleSearchSelect(nodeId) {
     const node = graphData?.nodes.find(n => n.id === nodeId)
@@ -166,7 +180,20 @@ export default function GraphPage() {
 
           <div className="h-4 w-px bg-[var(--border)]" />
 
-          {/* Impact Mode toggle */}
+          <button
+            onClick={() => setAreasOpen(v => !v)}
+            title="Browse folder areas — stats and AI summaries"
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors ${
+              areasOpen
+                ? 'bg-[var(--green-light)] text-[var(--green-primary)] border border-[var(--green-border)]'
+                : 'text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--bg-secondary)]'
+            }`}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            Areas
+          </button>
           <button
             onClick={toggleImpactMode}
             title="Impact mode — click a node to see blast radius"
@@ -247,6 +274,16 @@ export default function GraphPage() {
       )}
 
       <div className="flex-1 flex overflow-hidden">
+        {areasOpen && (
+          <CodeAreasPanel
+            graphData={graphData}
+            graphContext={graphContext}
+            onClose={() => setAreasOpen(false)}
+            onHighlightPaths={handleHighlight}
+            onRequestAiSummary={handleAreaAiSummary}
+            llmConfigured={llmConfigured}
+          />
+        )}
         <div className="flex-1 min-w-0">
           <Graph
             graphData={graphData}
@@ -266,7 +303,13 @@ export default function GraphPage() {
 
         {chatOpen && (
           <div className="w-[380px] shrink-0 overflow-hidden">
-            <ChatPanel graphContext={graphContext} onHighlight={handleHighlight} />
+            <ChatPanel
+              graphContext={graphContext}
+              onHighlight={handleHighlight}
+              onLlmConfiguredChange={setLlmConfigured}
+              areaSummaryRequest={areaSummaryRequest}
+              onAreaSummaryFinished={() => setAreaSummaryRequest(null)}
+            />
           </div>
         )}
       </div>
