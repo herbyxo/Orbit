@@ -1,14 +1,27 @@
-import { callLLM, humanizeLLMError } from '@/lib/llmProviders'
-
-// Orbit is BYO-key: the user's own API key arrives in the request body,
-// gets forwarded to the provider SDK, and is never logged or persisted.
-// This route is stateless.
+import { callLLM, humanizeLLMError, FREE_TIER_PROVIDER, FREE_TIER_MODEL } from '@/lib/llmProviders'
 
 const SMALL_REPO_THRESHOLD = 100
 const MAX_CONTENT_CHARS_PER_FILE = 4000
 const AUTO_SUMMARY_CONTENT_CHARS = 2000
 
 export const maxDuration = 30
+
+// Simple in-memory rate limiter for free-tier calls (per IP, resets hourly).
+// Not perfect across serverless instances but provides basic abuse protection.
+const freeTierMap = new Map()
+const FREE_TIER_LIMIT = 30
+
+function checkFreeTierLimit(ip) {
+  const now = Date.now()
+  const entry = freeTierMap.get(ip)
+  if (!entry || now > entry.resetAt) {
+    freeTierMap.set(ip, { count: 1, resetAt: now + 3_600_000 })
+    return true
+  }
+  if (entry.count >= FREE_TIER_LIMIT) return false
+  entry.count++
+  return true
+}
 
 export async function POST(req) {
   try {
@@ -31,11 +44,28 @@ export async function POST(req) {
       )
     }
 
-    if (!provider || !model || !apiKey) {
-      return Response.json(
-        { error: 'provider, model, and apiKey are required' },
-        { status: 400 }
-      )
+    let effectiveProvider = provider
+    let effectiveModel = model
+    let effectiveApiKey = apiKey
+
+    if (!effectiveApiKey) {
+      const groqKey = process.env.GROQ_API_KEY
+      if (!groqKey) {
+        return Response.json(
+          { error: 'No API key provided. Add your own key in settings or contact the Orbit team.' },
+          { status: 400 }
+        )
+      }
+      const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
+      if (!checkFreeTierLimit(ip)) {
+        return Response.json(
+          { error: 'Free tier limit reached (30 requests/hour). Add your own API key to continue.' },
+          { status: 429 }
+        )
+      }
+      effectiveProvider = FREE_TIER_PROVIDER
+      effectiveModel = FREE_TIER_MODEL
+      effectiveApiKey = groqKey
     }
 
     let system = isAutoSummary
@@ -49,9 +79,9 @@ The user is focused on the "${areaPath}" code area (a folder group). The graph p
     }
 
     const { text, usage } = await callLLM({
-      provider,
-      model,
-      apiKey,
+      provider: effectiveProvider,
+      model: effectiveModel,
+      apiKey: effectiveApiKey,
       system,
       messages,
     })

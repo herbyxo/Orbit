@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { PROVIDERS } from '@/lib/llmProviders'
+import { PROVIDERS, FREE_TIER_LABEL } from '@/lib/llmProviders'
 import LLMSettings from './LLMSettings'
 
 const STORAGE_KEY = 'orbit-llm-config'
@@ -69,7 +69,7 @@ export default function ChatPanel({
 
   // One-shot AI summary for a folder "area" (scoped graph context).
   useEffect(() => {
-    if (!areaSummaryRequest || !config || editingConfig) return
+    if (!areaSummaryRequest || !configLoaded || editingConfig) return
     const { id, path, scopedContext } = areaSummaryRequest
     if (scopedContext?.nodes?.length === 0) {
       onAreaSummaryFinished?.()
@@ -94,9 +94,9 @@ export default function ChatPanel({
           body: JSON.stringify({
             messages: conversation.map((m) => ({ role: m.role, content: m.content })),
             graphContext: scopedContext,
-            provider: config.provider,
-            model: config.model,
-            apiKey: config.apiKey,
+            provider: config?.provider,
+            model: config?.model,
+            apiKey: config?.apiKey,
             isAreaSummary: true,
             areaPath: path,
           }),
@@ -125,12 +125,12 @@ export default function ChatPanel({
         onAreaSummaryFinished?.()
       }
     })()
-  }, [areaSummaryRequest, config, editingConfig, onHighlight, onAreaSummaryFinished])
+  }, [areaSummaryRequest, configLoaded, config, editingConfig, onHighlight, onAreaSummaryFinished])
 
-  // Fire auto-summary once when config + graphContext are both ready and chat is empty.
+  // Fire auto-summary once when graphContext is ready and chat is empty (works with or without config).
   useEffect(() => {
     if (
-      !config ||
+      !configLoaded ||
       !graphContext?.nodes?.length ||
       summaryAttempted.current ||
       messages.length > 0
@@ -147,9 +147,9 @@ export default function ChatPanel({
           body: JSON.stringify({
             messages: [{ role: 'user', content: 'Summarise this codebase.' }],
             graphContext,
-            provider: config.provider,
-            model: config.model,
-            apiKey: config.apiKey,
+            provider: config?.provider,
+            model: config?.model,
+            apiKey: config?.apiKey,
             isAutoSummary: true,
           }),
         })
@@ -169,7 +169,7 @@ export default function ChatPanel({
     }
 
     run()
-  }, [config, graphContext]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [configLoaded, graphContext]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function saveConfig(next) {
     setConfig(next)
@@ -193,7 +193,7 @@ export default function ChatPanel({
   async function send(e) {
     e?.preventDefault()
     const text = input.trim()
-    if (!text || loading || !config) return
+    if (!text || loading) return
 
     const next = [...messages, { role: 'user', content: text }]
     setMessages(next)
@@ -208,9 +208,9 @@ export default function ChatPanel({
         body: JSON.stringify({
           messages: next.map((m) => ({ role: m.role, content: m.content })),
           graphContext,
-          provider: config.provider,
-          model: config.model,
-          apiKey: config.apiKey,
+          provider: config?.provider,
+          model: config?.model,
+          apiKey: config?.apiKey,
         }),
       })
 
@@ -238,44 +238,38 @@ export default function ChatPanel({
 
   const modelLabel = config
     ? PROVIDERS[config.provider]?.models.find((m) => m.id === config.model)?.label ?? config.model
-    : null
+    : FREE_TIER_LABEL
+
+  const providerLabel = config
+    ? `Connected via ${PROVIDERS[config.provider]?.label ?? config.provider}`
+    : 'Free · 30 requests/hour · Add your key for more'
 
   return (
     <div className="flex flex-col h-full bg-[var(--bg-secondary)] border-l border-[var(--border)]">
       <header className="px-5 py-3.5 border-b border-[var(--border)] bg-white flex items-center justify-between gap-3">
         <div className="min-w-0">
           <h2 className="font-semibold text-[var(--text-primary)] text-[14px] tracking-tight truncate">
-            {config ? modelLabel : 'Chat with your codebase'}
+            {modelLabel}
           </h2>
           <p className="text-[11px] text-[var(--text-tertiary)] mt-0.5 truncate">
-            {config
-              ? `Connected via ${PROVIDERS[config.provider]?.label ?? config.provider}`
-              : 'Connect a provider to start.'}
+            {providerLabel}
           </p>
         </div>
-        {config && (
-          <button
-            type="button"
-            onClick={() => setEditingConfig((v) => !v)}
-            title="Settings"
-            className="shrink-0 w-8 h-8 flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)] transition-colors"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setEditingConfig((v) => !v)}
+          title="AI settings"
+          className="shrink-0 w-8 h-8 flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)] transition-colors"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
       </header>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-        {!configLoaded && null}
-
-        {configLoaded && !config && (
-          <LLMSettings initial={null} onSave={saveConfig} variant="inline" />
-        )}
-
-        {configLoaded && config && editingConfig && (
+        {configLoaded && editingConfig && (
           <div className="space-y-3">
             <LLMSettings
               initial={config}
@@ -283,17 +277,19 @@ export default function ChatPanel({
               onCancel={() => setEditingConfig(false)}
               variant="drawer"
             />
-            <button
-              type="button"
-              onClick={clearConfig}
-              className="text-[12px] text-red-600 hover:text-red-700 transition-colors"
-            >
-              Remove key &amp; disconnect
-            </button>
+            {config && (
+              <button
+                type="button"
+                onClick={clearConfig}
+                className="text-[12px] text-red-600 hover:text-red-700 transition-colors"
+              >
+                Remove key &amp; use free tier
+              </button>
+            )}
           </div>
         )}
 
-        {configLoaded && config && !editingConfig && messages.length === 0 && !loading && !summarising && <EmptyState />}
+        {configLoaded && !editingConfig && messages.length === 0 && !loading && !summarising && <EmptyState />}
 
         {summarising && (
           <div className="flex items-center gap-2 text-[13px] text-[var(--text-tertiary)]">
@@ -302,7 +298,7 @@ export default function ChatPanel({
           </div>
         )}
 
-        {configLoaded && config && !editingConfig && messages.map((m, i) => (
+        {configLoaded && !editingConfig && messages.map((m, i) => (
           <Message
             key={i}
             role={m.role}
@@ -334,13 +330,13 @@ export default function ChatPanel({
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={config ? 'Ask about your codebase...' : 'Connect a provider above to start.'}
-            disabled={loading || !config || editingConfig}
+            placeholder="Ask about your codebase..."
+            disabled={loading || editingConfig}
             className="flex-1 px-3.5 py-2.5 rounded-lg border border-[var(--border)] text-[13px] text-[var(--text-primary)] placeholder-[var(--text-tertiary)] outline-none transition-all focus:border-[var(--border-focus)] focus:shadow-[0_0_0_3px_rgba(16,163,127,0.1)] disabled:opacity-50"
           />
           <button
             type="submit"
-            disabled={loading || !input.trim() || !config || editingConfig}
+            disabled={loading || !input.trim() || editingConfig}
             className="px-4 py-2.5 rounded-lg bg-[var(--green-primary)] text-white text-[13px] font-medium hover:bg-[var(--green-hover)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             Send

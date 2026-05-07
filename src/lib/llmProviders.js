@@ -17,7 +17,22 @@ const MAX_TOKENS = 1000
  * Catalog of providers + models surfaced in the settings UI.
  * Add to the `models` array to expose a new model; no other code changes needed.
  */
+export const FREE_TIER_PROVIDER = 'groq'
+export const FREE_TIER_MODEL = 'llama-3.3-70b-versatile'
+export const FREE_TIER_LABEL = 'Free AI · Llama 3.3 (Groq)'
+
 export const PROVIDERS = {
+  groq: {
+    id: 'groq',
+    label: 'Groq',
+    keyPlaceholder: 'gsk_...',
+    keyConsoleUrl: 'https://console.groq.com/keys',
+    models: [
+      { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B (fast + smart)' },
+      { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B (fastest)' },
+      { id: 'gemma2-9b-it', label: 'Gemma 2 9B' },
+    ],
+  },
   anthropic: {
     id: 'anthropic',
     label: 'Anthropic',
@@ -73,6 +88,8 @@ export async function callLLM({ provider, model, apiKey, system, messages }) {
   switch (provider) {
     case 'anthropic':
       return callAnthropic({ apiKey, model, system, messages })
+    case 'groq':
+      return callGroq({ apiKey, model, system, messages })
     case 'openai':
       return callOpenAI({ apiKey, model, system, messages })
     case 'google':
@@ -105,6 +122,25 @@ async function callAnthropic({ apiKey, model, system, messages }) {
 
 async function callOpenAI({ apiKey, model, system, messages }) {
   const client = new OpenAI({ apiKey })
+  const res = await client.chat.completions.create({
+    model,
+    max_tokens: MAX_TOKENS,
+    messages: [
+      { role: 'system', content: system },
+      ...messages.map((m) => ({ role: m.role, content: m.content })),
+    ],
+  })
+  return {
+    text: res.choices[0]?.message?.content ?? '',
+    usage: {
+      inputTokens: res.usage?.prompt_tokens,
+      outputTokens: res.usage?.completion_tokens,
+    },
+  }
+}
+
+async function callGroq({ apiKey, model, system, messages }) {
+  const client = new OpenAI({ apiKey, baseURL: 'https://api.groq.com/openai/v1' })
   const res = await client.chat.completions.create({
     model,
     max_tokens: MAX_TOKENS,
