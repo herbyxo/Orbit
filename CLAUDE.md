@@ -1,4 +1,4 @@
-@C:\Files\Claude\memory\project_orbit.md
+@C:\Files\Claude\claude-skills\orbit\SKILL.md
 
 # Orbit — Claude Code Context
 
